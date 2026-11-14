@@ -17,6 +17,7 @@ use std::path::Path;
 
 mod bloom;
 mod defaults;
+mod firelight;
 mod fog;
 mod grading;
 mod haze;
@@ -126,7 +127,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(shafts::ShaftsPlugin)
             .add_plugins(rays::RaysPlugin)
             .add_plugins(ssao::SsaoPlugin)
-            .add_plugins(wetness::WetnessPlugin);
+            .add_plugins(wetness::WetnessPlugin)
+            .add_plugins(firelight::FirelightPlugin);
     }
 }
 
