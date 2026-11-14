@@ -90,6 +90,8 @@ impl Plugin for LiquidPlugin {
             // PreUpdate: a surface streamed by last frame's commands is indexed before anyone asks.
             .add_systems(PreUpdate, maintain_water_index)
             .add_systems(Startup, surface::setup_liquid.after(AssetSet::Open))
+            .add_message::<crate::world_map::WorldReload>()
+            .add_systems(Update, surface::reload_liquid_frames)
             .add_systems(
                 Update,
                 (

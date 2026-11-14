@@ -37,14 +37,22 @@ pub struct MapChange;
 pub(crate) struct WorldMapLoad;
 
 /// Loads `Map.dbc` and seeds [`CurrentMap`] at startup, after the patch chain opens.
+/// A request to rebuild the streamed world of the current map from scratch, as a map change would:
+/// every map-scoped cache is evicted, every tile dropped and streamed again. Deviation: the
+/// reference has no same-map rebuild; an embedding app sends it after swapping its texture source.
+#[derive(Message, Clone, Copy, Debug, Default)]
+pub struct WorldReload;
+
 pub(crate) struct WorldMapPlugin;
 
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<MapChange>().add_systems(
-            Startup,
-            load_world_map.after(AssetSet::Open).in_set(WorldMapLoad),
-        );
+        app.add_message::<MapChange>()
+            .add_message::<WorldReload>()
+            .add_systems(
+                Startup,
+                load_world_map.after(AssetSet::Open).in_set(WorldMapLoad),
+            );
         app.add_systems(Update, announce_map_change);
     }
 }
@@ -55,7 +63,12 @@ pub(crate) fn announce_map_change(
     map: Option<Res<CurrentMap>>,
     mut last: Local<Option<u32>>,
     mut changes: MessageWriter<MapChange>,
+    mut reloads: MessageReader<WorldReload>,
 ) {
+    if reloads.read().count() > 0 {
+        info!("world reload: evicting map-scoped caches");
+        changes.write(MapChange);
+    }
     let Some(map) = map else { return };
     if let Some(prev) = last.replace(map.0) {
         if prev != map.0 {
