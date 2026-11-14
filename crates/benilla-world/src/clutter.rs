@@ -323,10 +323,26 @@ fn build_chunk_clutter(
         if subs.is_empty() {
             continue;
         }
+        // Wind inputs (an Elderoth engine patch, from the everwood graphics fork):
+        // UV_1 = (bend height 0..1, per-tuft phase), which the program's vertex hook reads
+        // (`gfx_hooks::gfx_vertex_offset`). The height is the model's own M2 Z (up) over one span
+        // across all its submeshes, so a multi-part tuft bends as one body; a model the program
+        // classes rigid (`foliage::rigid`, stones in the table) gets zero and never moves.
+        // The per-tuft bend weight and phase:
+        // Ported from WarcraftXL (https://github.com/WarcraftXL) by iThorgrim — module wxl-experimental-wind, grass/GrassWind.hpp, grass/GrassWind.cpp.
+        let (min_z, max_z) = subs
+            .iter()
+            .flat_map(|sub| sub.positions.iter())
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+                (lo.min(p[2]), hi.max(p[2]))
+            });
+        let height_span = (max_z - min_z).max(1.0e-4);
+        let bends = !crate::foliage::rigid(model_path);
         for sub in subs.iter() {
             let vcount = sub.positions.len() * placements.len();
             let mut positions = Vec::with_capacity(vcount);
             let mut uvs = Vec::with_capacity(vcount);
+            let mut wind = Vec::with_capacity(vcount);
             // The ground normal under each tuft, never the blade's own M2 normal.
             let mut normals = Vec::with_capacity(vcount);
             let mut colors = Vec::with_capacity(vcount);
@@ -338,12 +354,19 @@ fn build_chunk_clutter(
                 let rot = Quat::from_rotation_y(d.yaw);
                 // The reference's random per-tuft scale, in [0.9, 1.1].
                 let inst_scale = d.scale;
+                let phase = tuft_phase(origin);
                 // One tint per tuft, the lit material (colour material on ambient and diffuse,
                 // `0x59cfec`): `wow_model.wgsl` lights `clamp(grey × light) × texture`.
                 let tint = [sp.tint, sp.tint, sp.tint, 1.0];
                 for (i, p) in sub.positions.iter().enumerate() {
                     positions.push((rot * (wow_to_bevy(*p) * inst_scale) + origin).to_array());
                     uvs.push(sub.uvs[i]);
+                    let bend_height = if bends {
+                        ((p[2] - min_z) / height_span).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    wind.push([bend_height, phase]);
                     normals.push(sp.ground_normal);
                     colors.push(tint);
                 }
@@ -355,6 +378,7 @@ fn build_chunk_clutter(
             );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, wind);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             // The MCSH tint, under the `VERTEX_COLORS` def the shader's clutter path reads.
             mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
@@ -402,6 +426,13 @@ fn build_chunk_clutter(
         );
     }
     out
+}
+
+/// A tuft's wind phase (radians), hashed from its world origin: identity, not state, so rebuild
+/// order and frame timing never change a blade's motion. Source: everwood `clutter::tuft_phase`.
+fn tuft_phase(origin: Vec3) -> f32 {
+    let h = (origin.x * 0.737 + origin.z * 1.311).sin() * 43_758.547;
+    h.fract().abs() * std::f32::consts::TAU
 }
 
 /// Squared distance from a point to an axis-aligned box, zero inside.
