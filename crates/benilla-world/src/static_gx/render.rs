@@ -697,13 +697,19 @@ impl ViewNode for StaticGxNode {
         &'static ViewDepthTexture,
         &'static ViewUniformOffset,
         &'static StaticGxView,
+        Option<&'static bevy::render::camera::ExtractedCamera>,
+        Option<&'static bevy::camera::MainPassResolutionOverride>,
     );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (target, depth, view_offset, _marker): QueryItem<'w, '_, Self::ViewQuery>,
+        (target, depth, view_offset, _marker, camera, resolution): QueryItem<
+            'w,
+            '_,
+            Self::ViewQuery,
+        >,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let _t = super::gx_perf_guard(4);
@@ -771,6 +777,16 @@ impl ViewNode for StaticGxNode {
             occlusion_query_set: None,
         });
         let span = diagnostics.pass_span(&mut pass, "static_gx");
+        // Under a main-pass resolution override (an upscaler), draw into the same rectangle as
+        // bevy's opaque pass; without one the pass is unchanged.
+        if let Some(resolution) = resolution {
+            let viewport = camera.and_then(|c| c.viewport.as_ref());
+            if let Some(v) =
+                bevy::camera::Viewport::from_viewport_and_override(viewport, Some(resolution))
+            {
+                pass.set_camera_viewport(&v);
+            }
+        }
         pass.set_bind_group(0, &view_bind.0, &[view_offset.offset]);
         pass.set_bind_group(2, shadow_bind, &[]);
         for (gpu, draw, sel) in &resolved {
