@@ -21,6 +21,7 @@ mod fog;
 mod grading;
 mod haze;
 mod hooks;
+mod mist;
 mod post;
 pub mod prefs;
 pub mod rows;
@@ -108,7 +109,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(grading::GradingPlugin)
             .add_plugins(bloom::BloomPlugin)
             .add_plugins(haze::HazePlugin)
-            .add_plugins(fog::FogPlugin);
+            .add_plugins(fog::FogPlugin)
+            .add_plugins(mist::MistPlugin);
     }
 }
 
