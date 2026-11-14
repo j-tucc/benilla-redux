@@ -16,8 +16,8 @@ use bevy::prelude::*;
 use std::path::Path;
 
 mod defaults;
+mod grading;
 mod hooks;
-#[allow(dead_code)] // The full-screen passes that use it are added one by one.
 mod post;
 pub mod prefs;
 pub mod rows;
@@ -100,7 +100,8 @@ impl Plugin for GfxPlugin {
             .insert_resource(prefs::SettingsFile::new(config_dir.as_deref()))
             .add_systems(PreUpdate, (prefs::follow_file, follow_settings).chain())
             .add_systems(Update, report_camera)
-            .add_plugins(hooks::HooksPlugin);
+            .add_plugins(hooks::HooksPlugin)
+            .add_plugins(grading::GradingPlugin);
     }
 }
 
