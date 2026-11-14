@@ -18,10 +18,12 @@ use std::path::Path;
 mod bloom;
 mod defaults;
 mod grading;
+mod haze;
 mod hooks;
 mod post;
 pub mod prefs;
 pub mod rows;
+mod scatter;
 
 pub use defaults::session_defaults;
 use prefs::GraphicsPrefs;
@@ -103,7 +105,8 @@ impl Plugin for GfxPlugin {
             .add_systems(Update, report_camera)
             .add_plugins(hooks::HooksPlugin)
             .add_plugins(grading::GradingPlugin)
-            .add_plugins(bloom::BloomPlugin);
+            .add_plugins(bloom::BloomPlugin)
+            .add_plugins(haze::HazePlugin);
     }
 }
 
