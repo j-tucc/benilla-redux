@@ -56,6 +56,21 @@ impl AssetLoader for BlpImageLoader {
         settings: &Self::Settings,
         ctx: &mut LoadContext<'_>,
     ) -> Result<Image, Self::Error> {
+        // An embedding app's replacement world art, when it installed a source; stock otherwise.
+        if settings.variant == BlpVariant::WorldArt {
+            let path = ctx.path().path().to_string_lossy().into_owned();
+            if let Some(t) = crate::texture_source::replacement(&path, crate::bc_supported()) {
+                let wrap = crate::sampler_mode_of(&ctx.path().to_string());
+                let size = (t.width, t.height);
+                return Ok(world_art_levels(
+                    size,
+                    t.mip_count,
+                    t.format,
+                    t.chain.to_vec(),
+                    wrap,
+                ));
+            }
+        }
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
         let to_io = |e: anyhow::Error| std::io::Error::other(format!("{e:#}"));
@@ -153,12 +168,23 @@ fn world_art_image(upload: UploadChain, wrap: (bool, bool)) -> Image {
     for mip in &chain.mips {
         data.extend_from_slice(mip);
     }
+    world_art_levels((chain.width, chain.height), levels, format, data, wrap)
+}
+
+/// [`world_art_image`] over a chain already laid out level after level in `format`.
+pub(crate) fn world_art_levels(
+    (width, height): (u32, u32),
+    levels: u32,
+    format: TextureFormat,
+    data: Vec<u8>,
+    wrap: (bool, bool),
+) -> Image {
     // `new_uninit`: `Image::new` would clone mip 0 only to feed a length assert meant for
     // uncompressed formats.
     let mut image = Image::new_uninit(
         Extent3d {
-            width: chain.width,
-            height: chain.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
