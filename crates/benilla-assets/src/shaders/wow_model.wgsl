@@ -482,8 +482,7 @@ fn vertex_light(
     let shaded_band = m.sun_scale.x < 0.5;
     let shade_t = select(inst_shade * (1.0 - aside), 1.0, shaded_band);
     let mid_band = m.sun_scale.x >= 0.5 && m.sun_scale.x < 0.85;
-    var intensity = select(mix(2.5, 0.5, shade_t), 1.0, mid_band);
-    intensity = select(intensity, mix(0.5, 1.0, aside), shaded_band);
+    let intensity = select(select(mix(2.5, 0.5, shade_t), 1.0, mid_band), mix(0.5, 1.0, aside), shaded_band);
     // One `intensity` multiply covers every sun band (never I²); the c10 `.w` ambient does not
     // scale. `pack_model_core_rows` packs the same closed form.
     let sun_dc = wow_light.grade.yzw * intensity;

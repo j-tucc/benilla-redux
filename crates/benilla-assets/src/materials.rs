@@ -28,13 +28,15 @@ pub fn register_shaders(app: &mut App) {
     // The program's graphics hook points (`#import benilla::{gfx_data, gfx_hooks}`), loaded
     // eagerly so every receiver, in this crate or in benilla-world, resolves them. The hooks
     // module sits at a fixed handle so a program can replace it ([`GFX_HOOKS_SHADER`]).
-    bevy::shader::load_shader_library!(app, "shaders/gfx_data.wgsl");
-    bevy::asset::load_internal_asset!(
-        app,
-        GFX_HOOKS_SHADER,
-        "shaders/gfx_hooks.wgsl",
-        Shader::from_wgsl
-    );
+    if app.world().contains_resource::<Assets<Shader>>() {
+        bevy::shader::load_shader_library!(app, "shaders/gfx_data.wgsl");
+        bevy::asset::load_internal_asset!(
+            app,
+            GFX_HOOKS_SHADER,
+            "shaders/gfx_hooks.wgsl",
+            Shader::from_wgsl
+        );
+    }
 }
 
 /// The `benilla::gfx_hooks` module: the stock hook bodies the engine's shaders call. A program
