@@ -8,11 +8,13 @@ use benilla_formats::{LightCatalog, LiquidKind};
 
 mod blob; // off-world light blobs (portrait booths, body panes, glue scene)
 mod daynight; // the sun, moon and day/night curves
+mod gfx_data; // the program's per-frame graphics data
 mod global_light; // the shared global-light storage buffer
 mod prop_probes; // the interior-prop SH probe table
 mod resolve; // the per-frame time-of-day resolve and the interior-fog crossfade
 mod sh; // the model SH probe fold
 pub use blob::LightBlob;
+pub use gfx_data::{GfxData, GFX_ROWS};
 pub use global_light::{new_shared_light_buffer, LightRooms, SharedLightBuffer, WorldPointLight};
 pub use prop_probes::{PropProbeSlot, PropProbes, MAX_PROP_PROBES};
 // The std430 layout stays in the crate: off-world producers state values through `LightBlob`,
@@ -100,6 +102,46 @@ pub struct WowLighting {
 }
 
 impl WowLighting {
+    /// The visible sun, camera to sun in Bevy space (read-only for program-side effects).
+    pub fn celestial_dir(&self) -> Vec3 {
+        self.celestial_dir
+    }
+
+    /// The pushed scene fog pair `(start, end)` in yd.
+    pub fn fog_span(&self) -> (f32, f32) {
+        (self.fog_start, self.fog_end)
+    }
+
+    /// The five sky-dome stops, zenith to horizon.
+    pub fn sky(&self) -> [[f32; 3]; 5] {
+        self.sky
+    }
+
+    /// The storm blend `min(1, density * 4)` of the live weather.
+    pub fn storm_bcc(&self) -> f32 {
+        self.storm_bcc
+    }
+
+    /// The celestial tint (sRGB) broadcast into the sun and moon discs.
+    pub fn celestial_tint(&self) -> [f32; 3] {
+        self.celestial_tint
+    }
+
+    /// The star field's global alpha: 1 in deep night, 0 all day.
+    pub fn star_alpha(&self) -> f32 {
+        self.star_alpha
+    }
+
+    /// The cloud glow's body (sun by day, moon by night), its day envelope, and the cloud palette
+    /// `[sun-glow, slope, gbase]`.
+    pub fn cloud_glow(&self) -> (Vec3, f32, [[f32; 3]; 3]) {
+        (
+            self.cloud_glow_dir,
+            self.cloud_glow_track,
+            self.cloud_colors,
+        )
+    }
+
     /// Per-kind water swatch endpoints `(shallow_rgb, deep_rgb, shallow_alpha, deep_alpha)`, the
     /// IntBand rows raw: the × 0.711 dim belongs to the sky fill `0x68c250`, not to water. The ADT
     /// swatch is the reference's 64-row byte ramp between them (`0x68a830`, in `liquid.wgsl`);

@@ -5,6 +5,7 @@
 // and must stay in sync: naga_oil cannot import functions that use another module's bindings.
 
 #import bevy_render::view::View
+#import benilla::{gfx_data, gfx_hooks}
 
 @group(0) @binding(0) var<uniform> view: View;
 
@@ -29,6 +30,8 @@ struct WowLight {
     wmo_fog_params: vec4<f32>,
     point_count: vec4<f32>,
     points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
     // lighting::prop_probes: 8192 slots of 7 rows; the buffer's later regions are not mirrored.
     prop_probes: array<vec4<f32>, 57344>,
 }
@@ -247,8 +250,16 @@ fn vertex(v: GxVertex) -> GxVsOut {
         return out;
     }
     // Camera-relative for f32 precision: the recentred vertex plus (cell origin - camera).
-    let p_cam = v.position + (cell.origin.xyz - view.world_position);
-    let world = v.position + cell.origin.xyz;
+    var p_cam = v.position + (cell.origin.xyz - view.world_position);
+    var world = v.position + cell.origin.xyz;
+    // The static vertex hook point, fed the placement anchor and the vertex word (zero in the
+    // stock hook).
+    let moved = gfx_hooks::gfx_vertex_offset(
+        gfx_hooks::GFX_VERTEX_STATIC, world, vec4<f32>(v.anchor, bitcast<f32>(v.word)),
+        view.world_position, wow_light.gfx,
+    );
+    p_cam += moved;
+    world += moved;
     out.world_position = vec4<f32>(world, 1.0);
     let view_rot = mat3x3<f32>(
         view.view_from_world[0].xyz,
@@ -354,9 +365,17 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
         fog_span = wow_light.wmo_fog_params.xy;
     }
     if (fog_color.w > 0.5 && (in.word & WORD_FOG_OFF) == 0u) {
-        let denom = max(fog_span.y - fog_span.x, 0.001);
-        let factor = clamp((fog_span.y - eye_z) / denom, 0.0, 1.0);
-        rgb = mix(fog_color.xyz, rgb, factor);
+        // The 1.12 law unless the program replaces the hooks (`gfx_hooks::gfx_fog`).
+        let fog = gfx_hooks::gfx_fog(
+            fog_color.xyz,
+            fog_span,
+            eye_z,
+            in.world_position.xyz,
+            view.world_position,
+            true,
+            wow_light.gfx,
+        );
+        rgb = mix(fog.rgb, rgb, fog.w);
     }
     // Gamma-space output; alpha pinned 1.0, every draw here is opaque.
     return vec4<f32>(rgb, 1.0);

@@ -34,6 +34,9 @@ pub struct CloudExt {
     #[texture(100)]
     #[sampler(101)]
     pub(crate) texels: Handle<Image>,
+    /// The shared light buffer, read only for the program's graphics data (`gfx_hooks::gfx_cloud`).
+    #[storage(90, read_only, buffer)]
+    pub(crate) light_buf: bevy::render::render_resource::Buffer,
 }
 
 impl MaterialExtension for CloudExt {
@@ -132,7 +135,12 @@ pub(super) fn setup_cloud_layer(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<CloudMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    light: Option<Res<crate::lighting::SharedLightBuffer>>,
 ) {
+    // A headless build has no device, hence no light buffer to bind and no dome to draw.
+    let Some(light) = light else {
+        return;
+    };
     let image = images.add(Image::new(
         Extent3d {
             width: COLS as u32,
@@ -156,6 +164,7 @@ pub(super) fn setup_cloud_layer(
         },
         extension: CloudExt {
             texels: image.clone(),
+            light_buf: light.0.clone(),
         },
     });
     commands.spawn((

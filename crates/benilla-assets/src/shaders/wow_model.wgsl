@@ -14,6 +14,7 @@
 // Not built: a specular term (the M2 per-material shininess is only inferred) and the WMO
 // per-group authored colour.
 
+#import benilla::{gfx_data, gfx_hooks}
 #import bevy_pbr::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
@@ -93,6 +94,8 @@ struct WowLight {
     // in Bevy's clusterables, which the view layout gives the fragment stage only.
     point_count: vec4<f32>,
     points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
     // The interior-prop SH probes, 7 rows per slot (`MAX_PROP_PROBES` = 8192 slots). Only this
     // shader declares this tail; the other shaders bind the same buffer by its prefix.
     prop_probes: array<vec4<f32>, 57344>,
@@ -560,8 +563,17 @@ fn vertex(vertex: WowVertex) -> WowVsOut {
     // Precision: camera-relative to clip space; `clip_from_world × p_world` cancels
     // catastrophically with camera and geometry near 9 k yd. `world_position` is absolute again:
     // lighting and fog need no such precision.
-    let p_cam = (frame_from_local * vec4<f32>(vertex.position, 1.0)).xyz
+    var p_cam = (frame_from_local * vec4<f32>(vertex.position, 1.0)).xyz
         + (frame_origin - view.world_position);
+#ifdef VERTEX_UVS_B
+    // Ground clutter's vertex hook point, fed its second UV set (zero in the stock hook).
+    if (m.clutter_fade.w > 0.5) {
+        p_cam += gfx_hooks::gfx_vertex_offset(
+            gfx_hooks::GFX_VERTEX_CLUTTER, p_cam + view.world_position,
+            vec4<f32>(vertex.uv_b, 0.0, 0.0), view.world_position, wow_light.gfx,
+        );
+    }
+#endif
     out.world_position = vec4<f32>(p_cam + view.world_position, 1.0);
     let view_rot = mat3x3<f32>(
         view.view_from_world[0].xyz,
@@ -888,13 +900,21 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
     let fog_policy = (u32(m.clutter_fade.z) >> 4u) & 7u;
     if (fog_color.w > 0.5 && fog_policy != 4u) {
         let eye_z = -(view.view_from_world * vec4<f32>(in.world_position.xyz, 1.0)).z;
-        let denom = max(fog_span.y - fog_span.x, 0.001);
-        let factor = clamp((fog_span.y - eye_z) / denom, 0.0, 1.0);
         var fog_rgb = fog_color.xyz;
         if (fog_policy == 1u) { fog_rgb = vec3<f32>(0.0); }
         else if (fog_policy == 2u) { fog_rgb = vec3<f32>(1.0); }
         else if (fog_policy == 3u) { fog_rgb = vec3<f32>(0.50196078); }
-        rgb = mix(fog_rgb, rgb, factor);
+        // The 1.12 law unless the program replaces the hooks (`gfx_hooks::gfx_fog`).
+        let fog = gfx_hooks::gfx_fog(
+            fog_rgb,
+            fog_span,
+            eye_z,
+            in.world_position.xyz,
+            view.world_position.xyz,
+            fog_policy == 0u,
+            wow_light.gfx,
+        );
+        rgb = mix(fog.rgb, rgb, fog.w);
     }
 
 

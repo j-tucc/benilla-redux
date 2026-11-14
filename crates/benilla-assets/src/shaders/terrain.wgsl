@@ -9,6 +9,7 @@
 // Bevy's `VertexOutput` has no slot for the interpolated specular, so the vertex transform and IO
 // struct are our own and `main_pass_post_lighting_processing` is dropped; fog is in-shader.
 
+#import benilla::{gfx_data, gfx_hooks}
 #import bevy_pbr::{
     mesh_functions,
     forward_io::Vertex,
@@ -46,6 +47,8 @@ struct WowLight {
     // then two rows per light, `[pos.xyz, range]` and `[rgb, 0]`.
     point_count: vec4<f32>,
     points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
@@ -226,11 +229,19 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
 
     // Gamma-space GL_LINEAR fog on planar eye-Z, as the reference computes `fogcoord`, not radial
     // distance. Per pixel matches its per-vertex fog, since a linear factor interpolates exactly.
+    // `gfx_hooks::gfx_fog` returns that law unless the program replaces the hooks.
     if (wow_light.fog_color.w > 0.5) {
         let eye_z = -(view.view_from_world * vec4<f32>(in.world_position.xyz, 1.0)).z;
-        let denom = max(wow_light.fog_params.y - wow_light.fog_params.x, 0.001);
-        let factor = clamp((wow_light.fog_params.y - eye_z) / denom, 0.0, 1.0);
-        tuned = mix(wow_light.fog_color.xyz, tuned, factor);
+        let fog = gfx_hooks::gfx_fog(
+            wow_light.fog_color.xyz,
+            wow_light.fog_params.xy,
+            eye_z,
+            in.world_position.xyz,
+            view.world_position.xyz,
+            true,
+            wow_light.gfx,
+        );
+        tuned = mix(fog.rgb, tuned, fog.w);
     }
 
     // Raw gamma out: the framebuffer holds gamma bytes and blends in gamma like the reference's;
