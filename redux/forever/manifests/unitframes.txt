@@ -1,0 +1,12 @@
+# benilla-forever milestone 1: player, target, target-of-target and party frames.
+# Atlas names and texture paths are the ones Forever's Blizzard_UnitFrame code references.
+atlas ui-hud-unitframe-*
+atlas circlemask
+atlas squaremask
+file interface/targetingframe/ui-statusbar.blp
+file interface/targetingframe/ui-statusbar-glow.blp
+file interface/raidframe/absorb-edge.blp
+file interface/raidframe/shield-overlay.blp
+file interface/raidframe/raid-bar-hp-fill.blp
+file interface/buttons/ui-debuff-overlays.blp
+file interface/lfgframe/ui-lfg-icon-portraitroles.blp

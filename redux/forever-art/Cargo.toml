@@ -1,0 +1,17 @@
+[package]
+name = "forever-art"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Turns art exported from the WoW Forever client into textures benilla's 1.12 UI can load"
+publish = false
+
+# Its own workspace: redux crates stay out of upstream's `members = ["crates/*"]` and its lock file.
+[workspace]
+
+[dependencies]
+png = "0.18"
+
+[dev-dependencies]
+# Round-trips the TGAs through benilla's own decoder and device-texture gate.
+benilla-formats = { path = "../../crates/benilla-formats" }
