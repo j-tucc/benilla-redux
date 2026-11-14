@@ -56,18 +56,19 @@ impl AssetLoader for BlpImageLoader {
         settings: &Self::Settings,
         ctx: &mut LoadContext<'_>,
     ) -> Result<Image, Self::Error> {
-        // An embedding app's replacement world art, when it installed a source; stock otherwise.
-        if settings.variant == BlpVariant::WorldArt {
+        // An embedding app's replacement art, when it installed a source; stock otherwise. The
+        // lanes that upload BLP blocks or gamma bytes take it; sRGB sprites, map tiles and cursors
+        // keep the stock decode.
+        if matches!(
+            settings.variant,
+            BlpVariant::WorldArt | BlpVariant::Effect | BlpVariant::PointSprite
+        ) {
             let path = ctx.path().path().to_string_lossy().into_owned();
             if let Some(t) = crate::texture_source::replacement(&path, crate::bc_supported()) {
-                let wrap = crate::sampler_mode_of(&ctx.path().to_string());
-                let size = (t.width, t.height);
-                return Ok(world_art_levels(
-                    size,
-                    t.mip_count,
-                    t.format,
-                    t.chain.to_vec(),
-                    wrap,
+                return Ok(replacement_image(
+                    settings.variant,
+                    t,
+                    &ctx.path().to_string(),
                 ));
             }
         }
@@ -169,6 +170,42 @@ fn world_art_image(upload: UploadChain, wrap: (bool, bool)) -> Image {
         data.extend_from_slice(mip);
     }
     world_art_levels((chain.width, chain.height), levels, format, data, wrap)
+}
+
+/// A source's replacement chain in `variant`'s lane: world art with the path's sampler mode, an
+/// effect sprite at level 0 clamped, a point sprite clamped with its levels.
+fn replacement_image(
+    variant: BlpVariant,
+    t: crate::texture_source::TextureOverride,
+    asset_path: &str,
+) -> Image {
+    let size = (t.width, t.height);
+    if variant == BlpVariant::WorldArt {
+        let wrap = crate::sampler_mode_of(asset_path);
+        return world_art_levels(size, t.mip_count, t.format, t.chain.to_vec(), wrap);
+    }
+    let effect = variant == BlpVariant::Effect;
+    let (levels, data) = if effect {
+        // Level 0 only, as the stock Effect lane uploads it.
+        let top = (t.width.div_ceil(4) * t.height.div_ceil(4)) as usize * 16;
+        (1, t.chain[..top].to_vec())
+    } else {
+        (t.mip_count, t.chain.to_vec())
+    };
+    let mut image = world_art_levels(size, levels, t.format, data, (false, false));
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::ClampToEdge,
+        address_mode_v: ImageAddressMode::ClampToEdge,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: if effect {
+            ImageFilterMode::Nearest
+        } else {
+            crate::tex_filter::tex_filter().mipmap_filter()
+        },
+        ..Default::default()
+    });
+    image
 }
 
 /// [`world_art_image`] over a chain already laid out level after level in `format`.

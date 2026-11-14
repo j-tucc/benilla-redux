@@ -434,6 +434,13 @@ fn load_frame_array(
     stem: &str,
     count: u32,
 ) -> Option<(Handle<Image>, u32)> {
+    // An embedding app's replacement frames, whole set or none (`liquid_frame_array_override`).
+    let paths: Vec<String> = (1..=count)
+        .map(|i| format!("XTextures\\{dir}\\{stem}.{i}.blp"))
+        .collect();
+    if let Some(array) = benilla_assets::liquid_frame_array_override(&paths) {
+        return Some((images.add(array), count));
+    }
     let mut frames: Vec<BlpMipChain> = Vec::new();
     let mut size = 0u32;
     for i in 1..=count {
