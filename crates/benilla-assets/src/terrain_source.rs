@@ -4,7 +4,7 @@
 //! Deviation: 1.12.1 has no layer replacement; this exists for an embedding game's texture packs
 //! and no benilla setting reaches it.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 
 use bevy::render::render_resource::TextureFormat;
 
@@ -46,15 +46,19 @@ pub trait TerrainLayerSource: Send + Sync + 'static {
     fn packed(&self, _report: &TileLayerReport) {}
 }
 
-static LAYER_SOURCE: OnceLock<Arc<dyn TerrainLayerSource>> = OnceLock::new();
+static LAYER_SOURCE: RwLock<Option<Arc<dyn TerrainLayerSource>>> = RwLock::new(None);
 
-/// Install the process's layer source before any tile loads; `false` when one was already set.
-pub fn set_terrain_layer_source(source: Arc<dyn TerrainLayerSource>) -> bool {
-    LAYER_SOURCE.set(source).is_ok()
+/// Install (`Some`) or remove (`None`) the process's layer source. Tiles loaded afterwards use it;
+/// tiles already loaded keep their arrays until the app reloads them.
+pub fn set_terrain_layer_source(source: Option<Arc<dyn TerrainLayerSource>>) {
+    *LAYER_SOURCE.write().unwrap_or_else(|p| p.into_inner()) = source;
 }
 
-pub(crate) fn layer_source() -> Option<&'static Arc<dyn TerrainLayerSource>> {
-    LAYER_SOURCE.get()
+pub(crate) fn layer_source() -> Option<Arc<dyn TerrainLayerSource>> {
+    LAYER_SOURCE
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
 }
 
 /// Bytes of one BC7 level at edge `w`: whole 4x4 blocks of 16 bytes.

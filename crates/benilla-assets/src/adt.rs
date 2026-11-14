@@ -163,7 +163,9 @@ impl AssetLoader for AdtLoader {
         let mut shading: Vec<ChunkShading> = Vec::with_capacity(tile.chunks.len());
 
         // A replacement source, when the embedding app set one, takes the whole tile or none of it.
-        let replaced = layer_source().map(|source| {
+        // One source for the whole tile, even if the app swaps it while this tile loads.
+        let source = layer_source();
+        let replaced = source.as_ref().map(|source| {
             let keys = layer_keys(&tile.chunks);
             let packed = replacement_layers(&**source, &keys, LAYER_FALLBACK, bc_supported());
             if packed.is_ok() {
@@ -249,7 +251,7 @@ impl AssetLoader for AdtLoader {
             packed.format,
             packed.data.len() >> 10
         );
-        if let Some(source) = layer_source() {
+        if let Some(source) = &source {
             source.packed(&TileLayerReport {
                 tile: ctx.path().to_string(),
                 layers: layer_count,

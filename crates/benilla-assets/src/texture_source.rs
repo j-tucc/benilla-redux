@@ -4,9 +4,14 @@
 //! asset path's sampler mode. Deviation: 1.12.1 has no texture replacement; this exists for an
 //! embedding game's texture packs and no benilla setting reaches it.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 
-use bevy::render::render_resource::TextureFormat;
+use bevy::asset::RenderAssetUsages;
+use bevy::image::{Image, ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::render::render_resource::{
+    Extent3d, TextureDataOrder, TextureDimension, TextureFormat, TextureViewDescriptor,
+    TextureViewDimension,
+};
 
 /// One replacement texture: a mip chain to 1x1 (each level `max(1, edge >> i)`), level 0 first,
 /// straight (not premultiplied) alpha, in the non-sRGB gamma-byte space world art samples in.
@@ -25,11 +30,19 @@ pub trait WorldTextureSource: Send + Sync + 'static {
     fn texture(&self, key: &str) -> Option<TextureOverride>;
 }
 
-static TEXTURE_SOURCE: OnceLock<Arc<dyn WorldTextureSource>> = OnceLock::new();
+static TEXTURE_SOURCE: RwLock<Option<Arc<dyn WorldTextureSource>>> = RwLock::new(None);
 
-/// Install the process's world-art source before any model loads; `false` when one was set.
-pub fn set_world_texture_source(source: Arc<dyn WorldTextureSource>) -> bool {
-    TEXTURE_SOURCE.set(source).is_ok()
+/// Install (`Some`) or remove (`None`) the process's world-art source. Loads afterwards use it;
+/// textures already loaded keep their images until the app reloads them.
+pub fn set_world_texture_source(source: Option<Arc<dyn WorldTextureSource>>) {
+    *TEXTURE_SOURCE.write().unwrap_or_else(|p| p.into_inner()) = source;
+}
+
+fn texture_source() -> Option<Arc<dyn WorldTextureSource>> {
+    TEXTURE_SOURCE
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
 }
 
 /// The source's key for a `WorldArt` asset path (`world/x/foo@cc.blp` → `world\x\foo.blp`).
@@ -41,7 +54,7 @@ pub(crate) fn texture_key(asset_path: &str) -> String {
 /// The replacement for `asset_path`, when a source is set, the device takes BC and the chain is
 /// a valid BC7 chain of whole 4x4 blocks at mip 0.
 pub(crate) fn replacement(asset_path: &str, bc_supported: bool) -> Option<TextureOverride> {
-    let source = TEXTURE_SOURCE.get()?;
+    let source = texture_source()?;
     if !bc_supported {
         return None;
     }
@@ -53,6 +66,63 @@ pub(crate) fn replacement(asset_path: &str, bc_supported: bool) -> Option<Textur
             None
         }
     }
+}
+
+/// The source's validated replacement for an internal texture path (`XTextures\river\lake_a.1.blp`),
+/// for a caller outside the loader; `None` without a source, BC support or a valid chain.
+pub fn world_texture_override(internal_path: &str) -> Option<TextureOverride> {
+    replacement(internal_path, crate::bc_supported())
+}
+
+/// Animated liquid frames from the source as one repeating `texture_2d_array`, only when every
+/// frame is supplied, square and the same size; `None` keeps the stock frames. The frames upload
+/// as stored: the stock path's per-frame DC flattening needs decoded texels, so a pack must ship
+/// frames whose means already match.
+pub fn liquid_frame_array_override(paths: &[String]) -> Option<Image> {
+    let frames: Vec<TextureOverride> = paths
+        .iter()
+        .map(|p| world_texture_override(p))
+        .collect::<Option<_>>()?;
+    let first = frames.first()?;
+    let (size, mips) = (first.width, first.mip_count);
+    if frames
+        .iter()
+        .any(|f| f.width != size || f.height != size || f.mip_count != mips)
+    {
+        return None;
+    }
+    let mut data = Vec::with_capacity(frames.len() * first.chain.len());
+    for f in &frames {
+        data.extend_from_slice(&f.chain);
+    }
+    let mut image = Image::new_uninit(
+        Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: frames.len() as u32,
+        },
+        TextureDimension::D2,
+        TextureFormat::Bc7RgbaUnorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.data = Some(data);
+    image.texture_descriptor.mip_level_count = mips;
+    image.data_order = TextureDataOrder::LayerMajor;
+    image.texture_view_descriptor = Some(TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let filter = crate::tex_filter::tex_filter();
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: filter.mipmap_filter(),
+        anisotropy_clamp: filter.anisotropy_clamp(),
+        ..Default::default()
+    });
+    Some(image)
 }
 
 /// Bytes of a BC7 level of `w × h`.
