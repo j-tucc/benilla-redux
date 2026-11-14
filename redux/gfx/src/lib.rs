@@ -31,6 +31,7 @@ mod scatter;
 mod shadows;
 mod shafts;
 mod sky;
+mod ssao;
 mod wind;
 
 pub use defaults::session_defaults;
@@ -122,7 +123,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(shadows::ShadowsPlugin)
             .add_plugins(moonlight::MoonlightPlugin)
             .add_plugins(shafts::ShaftsPlugin)
-            .add_plugins(rays::RaysPlugin);
+            .add_plugins(rays::RaysPlugin)
+            .add_plugins(ssao::SsaoPlugin);
     }
 }
 
