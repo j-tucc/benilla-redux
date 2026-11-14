@@ -1,4 +1,4 @@
-# Usage: powershell -File redux	ools\offscreen.ps1 -Exe targeteleaseenilla.exe -Log run.log
+# Usage: powershell -File redux/tools/offscreen.ps1 -Exe target/release/benilla.exe -Log run.log
 # with the WOW_* run variables in the environment. Starts benilla.exe and moves its window off
 # every monitor (bottom of the z-order, never activated, never minimized) the moment it appears,
 # so a probe run never covers the screen. Windows only.
