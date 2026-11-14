@@ -22,6 +22,21 @@ pub struct Member {
     pub right: u32,
     pub top: u32,
     pub bottom: u32,
+    /// The `UiTextureAtlasElement` this region draws: the name modern code asks for.
+    pub element_id: u32,
+    /// Whether `width` × `height` came from `OverrideWidth`/`OverrideHeight`.
+    pub overridden: bool,
+}
+
+/// One `UiTextureAtlasElementSliceData` row: nine-slice margins, in the element's 1x pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slice {
+    pub left: u32,
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32,
+    /// 0 stretches the edges and centre, 1 tiles them.
+    pub mode: u32,
 }
 
 /// A header plus rows, each row a map from column name to cell.
@@ -91,7 +106,39 @@ pub fn parse_members(text: &str) -> Result<Vec<Member>, String> {
                 right: num(r, "CommittedRight")?,
                 top: num(r, "CommittedTop")?,
                 bottom: num(r, "CommittedBottom")?,
+                element_id: num(r, "UiTextureAtlasElementID")?,
+                overridden: num(r, "OverrideWidth")? != 0 || num(r, "OverrideHeight")? != 0,
             })
+        })
+        .collect()
+}
+
+/// `UiTextureAtlasElement.csv`: element id to its name, lower-cased.
+pub fn parse_elements(text: &str) -> Result<HashMap<u32, String>, String> {
+    rows(text)?
+        .iter()
+        .map(|r| {
+            let name = r.get("Name").ok_or("no column Name")?.to_lowercase();
+            Ok((num(r, "ID")?, name))
+        })
+        .collect()
+}
+
+/// `UiTextureAtlasElementSliceData.csv` by element id.
+pub fn parse_slices(text: &str) -> Result<HashMap<u32, Slice>, String> {
+    rows(text)?
+        .iter()
+        .map(|r| {
+            Ok((
+                num(r, "UiTextureAtlasElementID")?,
+                Slice {
+                    left: num(r, "Left")?,
+                    top: num(r, "Top")?,
+                    right: num(r, "Right")?,
+                    bottom: num(r, "Bottom")?,
+                    mode: num(r, "SliceMode")?,
+                },
+            ))
         })
         .collect()
 }
@@ -125,6 +172,28 @@ mod tests {
             (1, 199, 87, 158)
         );
         assert_eq!((m[1].width, m[1].height), (20, 10));
+        assert_eq!((m[0].element_id, m[0].overridden), (19918, false));
+        assert!(m[1].overridden);
+    }
+
+    #[test]
+    fn elements_and_slices_parse() {
+        let e = parse_elements("ID;Name\n26258;UI-HUD-ActionBar-Frame\n").unwrap();
+        assert_eq!(e[&26258], "ui-hud-actionbar-frame");
+        let s = parse_slices(
+            "ID;UiTextureAtlasElementID;Left;Top;Right;Bottom;SliceMode\n76;26258;16;20;16;20;1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s[&26258],
+            Slice {
+                left: 16,
+                top: 20,
+                right: 16,
+                bottom: 20,
+                mode: 1
+            }
+        );
     }
 
     #[test]
