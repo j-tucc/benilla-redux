@@ -33,6 +33,7 @@ mod shadows;
 mod shafts;
 mod sky;
 mod ssao;
+mod taa;
 mod wetness;
 mod wind;
 
@@ -128,7 +129,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(rays::RaysPlugin)
             .add_plugins(ssao::SsaoPlugin)
             .add_plugins(wetness::WetnessPlugin)
-            .add_plugins(firelight::FirelightPlugin);
+            .add_plugins(firelight::FirelightPlugin)
+            .add_plugins(taa::TaaPlugin);
     }
 }
 
