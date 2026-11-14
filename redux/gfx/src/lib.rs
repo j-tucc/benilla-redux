@@ -17,6 +17,7 @@ use std::path::Path;
 
 mod bloom;
 mod defaults;
+mod fog;
 mod grading;
 mod haze;
 mod hooks;
@@ -106,7 +107,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(hooks::HooksPlugin)
             .add_plugins(grading::GradingPlugin)
             .add_plugins(bloom::BloomPlugin)
-            .add_plugins(haze::HazePlugin);
+            .add_plugins(haze::HazePlugin)
+            .add_plugins(fog::FogPlugin);
     }
 }
 
