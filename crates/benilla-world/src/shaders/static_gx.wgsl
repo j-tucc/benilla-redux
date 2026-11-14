@@ -128,13 +128,10 @@ fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>) -> vec4<f32> {
 // clamp as the lit material. Both faces light from the submitted normal (no
 // GL_LIGHT_MODEL_TWO_SIDE in the reference). `vc` is the vertex colour, white where the batch
 // authors none; `point_lit.w` counts the bound point lights.
-fn vertex_light(
-    normal: vec3<f32>,
-    point_lit: vec4<f32>,
-    vc: vec4<f32>,
-    word: u32,
-    aside: f32,
-) -> vec3<f32> {
+// `gfx_hooks::gfx_baked_aside` for the vertex being lit (0 stock), set by `vertex` before it
+// calls `vertex_light`.
+var<private> baked_aside: f32;
+fn vertex_light(normal: vec3<f32>, point_lit: vec4<f32>, vc: vec4<f32>, word: u32) -> vec3<f32> {
     let n_lit = wow_normalize(normal);
     let L = -normalize(wow_light.light_sun.xyz);
     let ndotl = max(dot(n_lit, L), 0.0);
@@ -196,12 +193,12 @@ fn vertex_light(
         // ---- exterior ADT doodads and exterior MODD props ----
         // Model2.bls order-2 SH sun lobe at intensity 0.5 Shaded (MCSH), 1.0 Matte, 2.5 Lit,
         // baked unclamped as wow_model.wgsl's (`0x71c4e0`); only the per-vertex sum clamps.
-        // `aside` (`gfx_hooks::gfx_baked_aside`, 0 stock) lifts the shaded band toward the 1.0
+        // `baked_aside` (`gfx_hooks::gfx_baked_aside`, 0 stock) lifts the shaded band toward the 1.0
         // band where the program's own shadow stands in for the bake.
         let shade_t = select(1.0, 0.0, (word & WORD_SHADE_LIT) != 0u);
         var intensity = select(mix(2.5, 0.5, shade_t), 1.0, (word & WORD_MATTE) != 0u);
         if (shade_t > 0.5 && (word & WORD_MATTE) == 0u) {
-            intensity = mix(0.5, 1.0, aside);
+            intensity = mix(0.5, 1.0, baked_aside);
         }
         let sun_dc = wow_light.grade.yzw * intensity;
         let sun_lobe = vec3<f32>(
@@ -321,8 +318,8 @@ fn vertex(v: GxVertex) -> GxVsOut {
     }
     // A colour-less batch takes a constant 1.0 (WORD_HAS_VC).
     let vc = select(vec4<f32>(1.0), v.color, (v.word & WORD_HAS_VC) != 0u);
-    let aside = gfx_hooks::gfx_baked_aside(world, view.world_position, wow_light.gfx);
-    out.primary = vertex_light(v.normal, point_lit, vc, v.word, aside);
+    baked_aside = gfx_hooks::gfx_baked_aside(world, view.world_position, wow_light.gfx);
+    out.primary = vertex_light(v.normal, point_lit, vc, v.word);
     out.normal = v.normal;
     out.unsunned = vertex_unsunned(point_lit, vc, v.word);
     return out;
@@ -378,6 +375,7 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
     let folded = select(base.rgb, base.rgb * vc.rgb, has_vc);
     // The stage-0 modulate: the texel times the lit colour `vertex_light` clamped per vertex,
     // whose vertex colour is inside its clamp.
+    var rgb = base.rgb * in.primary;
     // The program's light hook on the exterior lanes (stock: the light unchanged).
     var primary = in.primary;
     let hooked = (in.word & (WORD_INTERIOR | WORD_UNLIT)) == 0u;
@@ -396,8 +394,8 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
         );
         primary = lit.rgb;
         direct = lit.w;
+        rgb = base.rgb * primary;
     }
-    var rgb = base.rgb * primary;
     if (hooked) {
         // The program's surface hook (`gfx_hooks::gfx_surface`, the colour unchanged stock).
         rgb = gfx_hooks::gfx_surface(
