@@ -22,7 +22,9 @@ fn main() -> benilla_app::AppExit {
     // Resolve the state folder from the redux checkout before the app is built, so redux's
     // session defaults can read the player's saved settings (`run_with` records the same folder).
     benilla_formats::set_project_folder(project_dir);
-    redux_gfx::session_defaults(benilla_app::config_dir().as_deref());
+    let state_dir = benilla_app::config_dir();
+    redux_gfx::session_defaults(state_dir.as_deref());
+    redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
         describe: env!("BENILLA_GIT_DESCRIBE"),

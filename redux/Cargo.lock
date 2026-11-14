@@ -5575,6 +5575,7 @@ dependencies = [
  "benilla-assets",
  "benilla-world",
  "bevy",
+ "naga",
  "serde",
  "toml",
 ]

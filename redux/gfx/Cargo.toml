@@ -17,3 +17,7 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 dlss = []
+
+[dev-dependencies]
+# Validates the full-screen pass shaders in tests: the same naga Bevy compiles them with.
+naga = { version = "27.0.3", features = ["wgsl-in"] }
