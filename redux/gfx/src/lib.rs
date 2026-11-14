@@ -26,6 +26,7 @@ mod post;
 pub mod prefs;
 pub mod rows;
 mod scatter;
+mod shadows;
 mod sky;
 mod wind;
 
@@ -114,7 +115,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(fog::FogPlugin)
             .add_plugins(mist::MistPlugin)
             .add_plugins(sky::SkyPlugin)
-            .add_plugins(wind::WindPlugin);
+            .add_plugins(wind::WindPlugin)
+            .add_plugins(shadows::ShadowsPlugin);
     }
 }
 
