@@ -49,6 +49,11 @@ impl MaterialExtension for CloudExt {
         "embedded://benilla_world/shaders/cloud.wgsl".into()
     }
 
+    /// A sky element never casts.
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn specialize(
         _pipeline: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,

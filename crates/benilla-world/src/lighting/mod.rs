@@ -15,6 +15,7 @@ mod resolve; // the per-frame time-of-day resolve and the interior-fog crossfade
 mod sh; // the model SH probe fold
 pub use blob::LightBlob;
 pub use gfx_data::{GfxData, GFX_ROWS};
+pub use global_light::GFX_DATA_OFFSET;
 pub use global_light::{new_shared_light_buffer, LightRooms, SharedLightBuffer, WorldPointLight};
 pub use prop_probes::{PropProbeSlot, PropProbes, MAX_PROP_PROBES};
 // The std430 layout stays in the crate: off-world producers state values through `LightBlob`,
@@ -125,6 +126,11 @@ impl WowLighting {
     /// The celestial tint (sRGB) broadcast into the sun and moon discs.
     pub fn celestial_tint(&self) -> [f32; 3] {
         self.celestial_tint
+    }
+
+    /// The white moon, camera to moon in Bevy space: up at night, below the horizon by day.
+    pub fn moon_dir(&self) -> Vec3 {
+        self.moon_dir_white
     }
 
     /// The star field's global alpha: 1 in deep night, 0 all day.

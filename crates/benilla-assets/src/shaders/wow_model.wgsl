@@ -20,7 +20,7 @@
     pbr_functions::alpha_discard,
     pbr_bindings,
     forward_io::VertexOutput,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{view, directional_shadow_textures, directional_shadow_textures_comparison_sampler},
     mesh_functions,
 }
 
@@ -150,6 +150,10 @@ struct WowVsOut {
 #endif
     // Stage 1's coordinate, generated or the vertex's UV set 1; (0, 0) without a stage 1.
     @location(11) stage1_uv: vec2<f32>,
+    // For the program's light hook (`gfx_hooks::gfx_lit`): the part of `primary` no sun ray
+    // carries, and a skinned rig's origin (w = 1) where the whole body takes one shadow sample.
+    @location(12) unsunned: vec3<f32>,
+    @location(13) shadow_anchor: vec4<f32>,
 }
 
 // The generated environment coordinate of `Model2.bls` (its programs for a stage whose coordinate
@@ -413,6 +417,7 @@ fn vertex_light(
     vcol: vec4<f32>,
     probe_slot: u32,
     raw_tag: u32,
+    aside: f32,
 ) -> vec3<f32> {
     let is_clutter = m.clutter_fade.w > 0.5;
     let is_wmo = m.model_flags.x > 0.5;
@@ -471,11 +476,14 @@ fn vertex_light(
     //   0.5..0.85: a doodad (ADT MDDF or WMO MODD, both `CMapDoodadDef`): 1.0, never 2.5
     //   < 0.5: a doodad on MCSH-shadowed ground: 0.5
     // The intensity is baked into the SH unclamped (`0x71c4e0`); only the per-vertex sum clamps.
+    // `aside` (`gfx_hooks::gfx_baked_aside`, 0 stock) hands the ground shade to the program's own
+    // shadow: an entity's shade byte fades out and the shaded doodad band rises to the 1.0 band.
     let inst_shade = select(f32((fade_tag >> 6u) & 0xffu) / 255.0, 0.0, interior_prop);
-    let mat_shade = select(0.0, 1.0, m.sun_scale.x < 0.5);
-    let shade_t = max(mat_shade, inst_shade);
+    let shaded_band = m.sun_scale.x < 0.5;
+    let shade_t = select(inst_shade * (1.0 - aside), 1.0, shaded_band);
     let mid_band = m.sun_scale.x >= 0.5 && m.sun_scale.x < 0.85;
-    let intensity = select(mix(2.5, 0.5, shade_t), 1.0, mid_band);
+    var intensity = select(mix(2.5, 0.5, shade_t), 1.0, mid_band);
+    intensity = select(intensity, mix(0.5, 1.0, aside), shaded_band);
     // One `intensity` multiply covers every sun band (never I²); the c10 `.w` ambient does not
     // scale. `pack_model_core_rows` packs the same closed form.
     let sun_dc = wow_light.grade.yzw * intensity;
@@ -523,6 +531,28 @@ fn vertex_light(
     }
     // `c28` is the model colour `[model+0x1a0]` (the body tint) × the batch's M2Color
     // (`0x70c60a`-`0x70c654`), written at `0x70c712`; `c29` holds the highlight.
+    return clamp(c * e + highlight, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// The part of `vertex_light`'s colour that no sun ray carries, for the program's light hook: the
+// ambient (the SH lobe's DC `.w` lanes, or the FFP ambient) and the point lights, through the same
+// material colour and clamp. Interior, rig-probe and unlit batches never take the hook.
+fn vertex_unsunned(point_lit: vec4<f32>, vcol: vec4<f32>, raw_tag: u32) -> vec3<f32> {
+    let highlight = highlight_add(raw_tag);
+    let amb = wow_light.light_ambient.rgb;
+    if (m.model_flags.x > 0.5) {
+        return clamp(vcol.rgb * amb + highlight, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    let anim_tint = m.tint.rgb + wow_light.matanim[u32(m.anim_slots.y)].xyz;
+    let c = vcol.rgb * anim_tint * body_tint(raw_tag & 0x3fffffffu);
+    if (m.clutter_fade.w > 0.5) {
+        return clamp(c * (amb + point_lit.rgb) + highlight, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    let sh_dc = vec3<f32>(wow_light.sh_c10_r.w, wow_light.sh_c10_g.w, wow_light.sh_c10_b.w);
+    var e = select(amb, sh_dc, wow_light.light_sun.w > 0.5) + point_lit.rgb;
+    if (point_lit.w > 0.5) {
+        e = clamp(e, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     return clamp(c * e + highlight, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
@@ -660,7 +690,15 @@ fn vertex(vertex: WowVertex) -> WowVsOut {
 #else
     let probe_slot = ((raw_tag & 0x3fffffffu) >> 6u) & 0x1fffu;
 #endif
-    out.primary = vertex_light(out.world_normal, point_lit, vcol, probe_slot, raw_tag);
+    let aside = gfx_hooks::gfx_baked_aside(
+        out.world_position.xyz, view.world_position.xyz, wow_light.gfx,
+    );
+    out.primary = vertex_light(out.world_normal, point_lit, vcol, probe_slot, raw_tag, aside);
+    out.unsunned = vertex_unsunned(point_lit, vcol, raw_tag);
+    out.shadow_anchor = vec4<f32>(0.0);
+#ifdef WOW_RIG_SKIN
+    out.shadow_anchor = vec4<f32>(frame_origin, 1.0);
+#endif
     return out;
 }
 
@@ -861,6 +899,29 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
             );
         }
 #endif
+    }
+    // The program's light hook on exterior lit batches (stock: the light unchanged). Interior
+    // groups and props, the rig-probe lane and unlit, Mod and additive batches keep their light.
+    let is_rig_probe = m.sun_scale.x >= 1.5;
+    let hook_lane = !is_interior && !is_rig_probe && !is_emissive
+        && (u32(m.clutter_fade.z) & (4u | 128u | 256u)) == 0u;
+    if (hook_lane) {
+        let unit = in.shadow_anchor.w > 0.5;
+        let lit = gfx_hooks::gfx_lit(
+            select(gfx_hooks::GFX_LIT_MODEL, gfx_hooks::GFX_LIT_UNIT, unit),
+            in.primary,
+            in.unsunned,
+            select(in.world_position.xyz, in.shadow_anchor.xyz, unit),
+            in.world_normal,
+            view.world_position.xyz,
+            directional_shadow_textures,
+            directional_shadow_textures_comparison_sampler,
+            wow_light.gfx,
+        );
+        lit_rgb = base.rgb * lit.rgb;
+        if (is_wmo) {
+            lit_rgb = base.rgb * m.tint.rgb * lit.rgb;
+        }
     }
     // The unlit path: an M2's unlit program outputs `c28 + c29` (`0x70c663`-`0x70c693` fold the
     // tint·M2Color term into `c29` beside the highlight), so the texel modulates

@@ -14,7 +14,7 @@
     mesh_functions,
     forward_io::Vertex,
     view_transformations::position_world_to_clip,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{view, directional_shadow_textures, directional_shadow_textures_comparison_sampler},
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var layer_array: texture_2d_array<f32>;
@@ -64,6 +64,10 @@ struct TerrainVsOut {
     // carried torch is (1.4, 0.87, 0.40)) saturates one vertex and falls off linearly from it,
     // where clamping per pixel would pin a wide plateau at white.
     @location(6) primary: vec3<f32>,
+    // For the program's light hook (`gfx_hooks::gfx_lit`): the MCNR normal, and the part of
+    // `primary` no sun ray carries (ambient and point lights, clamped alike).
+    @location(7) normal: vec3<f32>,
+    @location(8) unsunned: vec3<f32>,
 }
 
 // Terrain's point-light candidacy half-width (yd): `w + 10`, `w` being the chunk's bounding-sphere
@@ -164,6 +168,8 @@ fn vertex(in: Vertex) -> TerrainVsOut {
         vec3<f32>(0.0),
         vec3<f32>(1.0),
     );
+    out.normal = n;
+    out.unsunned = clamp(wow_light.light_ambient.rgb + points, vec3<f32>(0.0), vec3<f32>(1.0));
     return out;
 }
 
@@ -208,7 +214,19 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
     specmask = mix(specmask, s2.a, a.g);
     specmask = mix(specmask, s3.a, a.b);
 
-    let primary = in.primary;
+    // The program's light hook: the stock sum unless the program replaces the hooks.
+    let lit = gfx_hooks::gfx_lit(
+        gfx_hooks::GFX_LIT_TERRAIN,
+        in.primary,
+        in.unsunned,
+        in.world_position.xyz,
+        in.normal,
+        view.world_position.xyz,
+        directional_shadow_textures,
+        directional_shadow_textures_comparison_sampler,
+        wow_light.gfx,
+    );
+    let primary = lit.rgb;
 
     // MCSH baked shadow. With `pixelShaders` and `specular` on, terrain is one pass through
     // `terrainp_s.bls`, which reads the MCSH bit from the blend texture's alpha (1 lit, 0 shadowed)
@@ -218,13 +236,15 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
     // implicit derivatives need uniform control flow, and `si` is a varying.
     let si = in.uv_b.y;
     let mcsh = textureSample(shadow_array, splat_samp, auv, max(i32(round(si)), 0)).r;
-    let shadow_lit = select(1.0, 1.0 - mcsh, si >= 0.0);
+    // The program's own shadow may stand in for the bake (`gfx_hooks::gfx_baked_aside`, 0 stock).
+    let aside = gfx_hooks::gfx_baked_aside(in.world_position.xyz, view.world_position.xyz, wow_light.gfx);
+    let shadow_lit = select(1.0, 1.0 - mcsh * (1.0 - aside), si >= 0.0);
 
     // The `terrainp_s.bls` combine, then an LDR clamp:
     //   diffuse  = tex · primary · (0.3·shadow + 0.7)   (a flat −30% in shadow, no tint)
     //   specular = sheen · mask · shadow                 (none in shadow)
     let diffuse_term = color * primary * (0.3 * shadow_lit + 0.7);
-    let spec_term = in.specular * specmask * shadow_lit;
+    let spec_term = in.specular * specmask * (shadow_lit * lit.w);
     var tuned = clamp(diffuse_term + spec_term, vec3<f32>(0.0), vec3<f32>(1.0));
 
     // Gamma-space GL_LINEAR fog on planar eye-Z, as the reference computes `fogcoord`, not radial

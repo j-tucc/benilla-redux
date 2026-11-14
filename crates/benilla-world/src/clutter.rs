@@ -401,7 +401,13 @@ fn build_chunk_clutter(
             );
             out.push(
                 commands
-                    .spawn((Mesh3d(mesh), MeshMaterial3d(material), Transform::IDENTITY))
+                    // Tufts never cast: a blade is finer than a shadow texel.
+                    .spawn((
+                        Mesh3d(mesh),
+                        MeshMaterial3d(material),
+                        Transform::IDENTITY,
+                        bevy::light::NotShadowCaster,
+                    ))
                     .id(),
             );
         }

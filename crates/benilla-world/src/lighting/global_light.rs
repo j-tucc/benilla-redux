@@ -46,6 +46,10 @@ struct LightStd430 {
 /// Header row count of the layout above (rows 0..=20), which every light blob sizes against.
 pub const LIGHT_HEADER_ROWS: usize = 21;
 
+/// The byte offset of [`super::GfxData`]'s rows in the shared light buffer, for a program that
+/// writes some of its rows from the render world (after the packed light's upload).
+pub const GFX_DATA_OFFSET: u64 = std::mem::offset_of!(LightStd430, gfx) as u64;
+
 /// Packs the model-lighting core from `(ambient, diffuse, sun_dir)` and leaves every other lane
 /// alone: rows 0-2, the SH block (6-11 and 12 `.xyz`, ambient in the DC `.w` lanes) and the sun's
 /// SH DC on 17 `.yzw`, the exterior M2 lane's light. The sun's bands are `Model2.bls`'s

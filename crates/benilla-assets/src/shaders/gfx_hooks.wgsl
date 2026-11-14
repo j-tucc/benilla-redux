@@ -13,6 +13,12 @@
 const GFX_VERTEX_CLUTTER: u32 = 1u; // ground clutter: attr.xy = UV_1, attr.zw = 0
 const GFX_VERTEX_STATIC: u32 = 2u;  // a retained static batch: attr.xyz = placement anchor, attr.w = the vertex word (bitcast)
 
+// `gfx_lit` kinds: which receiver lane is asking.
+const GFX_LIT_TERRAIN: u32 = 1u; // ADT terrain, lit per vertex
+const GFX_LIT_MODEL: u32 = 2u;   // an exterior M2, WMO or clutter batch on the model lane
+const GFX_LIT_UNIT: u32 = 3u;    // a skinned rig: `world_pos` is the rig's origin, one sample per body
+const GFX_LIT_STATIC: u32 = 4u;  // an exterior batch of the retained static pass
+
 // The 1.12 fog survival: GL_LINEAR on planar eye-Z, 1 = no fog, 0 = fully fogged.
 fn gfx_fog_linear(eye_z: f32, span: vec2<f32>) -> f32 {
     let denom = max(span.y - span.x, 0.001);
@@ -70,4 +76,30 @@ fn gfx_cloud(
     gfx: GfxData,
 ) -> vec4<f32> {
     return texel;
+}
+
+// The light reaching an exterior surface: `lit` is the stock light sum (clamped, gamma), `ambient`
+// the part of it that no sun ray carries (what a fully shadowed surface keeps), `world_pos` the
+// receiving point (a unit's rig origin for `GFX_LIT_UNIT`), `normal` its surface normal.
+// `shadow_map` and `shadow_cmp` are the view's directional shadow array and its comparison
+// sampler; the stock body reads neither. Returns rgb = the light sum to use, w = how much of the
+// direct light arrives (1 = all, the stock value), for a receiver's own sun-only terms.
+fn gfx_lit(
+    kind: u32,
+    lit: vec3<f32>,
+    ambient: vec3<f32>,
+    world_pos: vec3<f32>,
+    normal: vec3<f32>,
+    camera_pos: vec3<f32>,
+    shadow_map: texture_depth_2d_array,
+    shadow_cmp: sampler_comparison,
+    gfx: GfxData,
+) -> vec4<f32> {
+    return vec4<f32>(lit, 1.0);
+}
+
+// How far the baked shade (terrain MCSH, the doodads' 0.5 band, an entity's ground-shade byte)
+// steps aside at `world_pos`, 0 = the stock bake, 1 = fully replaced by the program's own shadow.
+fn gfx_baked_aside(world_pos: vec3<f32>, camera_pos: vec3<f32>, gfx: GfxData) -> f32 {
+    return 0.0;
 }
