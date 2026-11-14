@@ -639,6 +639,7 @@ dependencies = [
  "benilla-app",
  "benilla-buildstamp",
  "benilla-formats",
+ "benilla-world",
  "bevy",
  "redux-gfx",
  "toml",
@@ -5572,12 +5573,15 @@ dependencies = [
 name = "redux-gfx"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "benilla-assets",
  "benilla-world",
  "bevy",
+ "libloading",
  "naga",
  "serde",
  "toml",
+ "wgpu",
 ]
 
 [[package]]

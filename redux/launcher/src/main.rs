@@ -17,6 +17,33 @@ fn project_dir() -> &'static str {
     }
 }
 
+/// Creates the Vulkan device through NVIDIA Streamline when its SDK is present (`redux-gfx`'s
+/// `dlss`), and hands it to benilla's boot; otherwise Bevy creates its own and DLSS draws as TAA.
+/// The SDK is looked for under `overrides/streamline/` beside the binary, then in `redux/` of a
+/// dev checkout.
+#[cfg(feature = "dlss")]
+fn streamline_device(project_dir: &str, state_dir: Option<&std::path::Path>) {
+    let mut roots = Vec::new();
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Into::into))
+    {
+        roots.push(dir);
+    }
+    if !project_dir.is_empty() {
+        roots.push(std::path::Path::new(project_dir).join("redux"));
+    }
+    let logs = state_dir.map_or_else(
+        || std::env::temp_dir().join("benilla-redux-streamline"),
+        |d| d.join("logs/streamline"),
+    );
+    if let Some(creation) = redux_gfx::dlss::render_creation(&logs, &roots) {
+        if let Ok(mut slot) = benilla_world::boot::RENDER_CREATION.lock() {
+            *slot = Some(creation);
+        }
+    }
+}
+
 fn main() -> benilla_app::AppExit {
     let project_dir = project_dir();
     // Resolve the state folder from the redux checkout before the app is built, so redux's
@@ -24,6 +51,8 @@ fn main() -> benilla_app::AppExit {
     benilla_formats::set_project_folder(project_dir);
     let state_dir = benilla_app::config_dir();
     redux_gfx::session_defaults(state_dir.as_deref());
+    #[cfg(feature = "dlss")]
+    streamline_device(project_dir, state_dir.as_deref());
     redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
