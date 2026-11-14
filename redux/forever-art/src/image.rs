@@ -120,6 +120,51 @@ impl Rgba {
         out
     }
 
+    /// Resample to exactly `w` × `h`, bilinear on premultiplied alpha (so transparent texels don't
+    /// bleed their colour). For the small up- and down-scales bar art needs.
+    pub fn resize(&self, w: u32, h: u32) -> Self {
+        let mut out = Rgba::new(w, h);
+        let pre = |p: [u8; 4]| {
+            let a = p[3] as f64 / 255.0;
+            [
+                p[0] as f64 * a,
+                p[1] as f64 * a,
+                p[2] as f64 * a,
+                p[3] as f64,
+            ]
+        };
+        for y in 0..h {
+            let fy = ((y as f64 + 0.5) * self.height as f64 / h as f64 - 0.5)
+                .clamp(0.0, (self.height - 1) as f64);
+            let (y0, ty) = (fy.floor() as u32, fy.fract());
+            let y1 = (y0 + 1).min(self.height - 1);
+            for x in 0..w {
+                let fx = ((x as f64 + 0.5) * self.width as f64 / w as f64 - 0.5)
+                    .clamp(0.0, (self.width - 1) as f64);
+                let (x0, tx) = (fx.floor() as u32, fx.fract());
+                let x1 = (x0 + 1).min(self.width - 1);
+                let (a, b) = (pre(self.at(x0, y0)), pre(self.at(x1, y0)));
+                let (c, d) = (pre(self.at(x0, y1)), pre(self.at(x1, y1)));
+                let mut v = [0f64; 4];
+                for i in 0..4 {
+                    let top = a[i] + (b[i] - a[i]) * tx;
+                    let bottom = c[i] + (d[i] - c[i]) * tx;
+                    v[i] = top + (bottom - top) * ty;
+                }
+                let alpha = v[3] / 255.0;
+                let un = |c: f64| {
+                    if alpha > 0.0 {
+                        (c / alpha).round().clamp(0.0, 255.0) as u8
+                    } else {
+                        0
+                    }
+                };
+                out.set(x, y, [un(v[0]), un(v[1]), un(v[2]), v[3].round() as u8]);
+            }
+        }
+        out
+    }
+
     /// Place at the top-left of the smallest power-of-two canvas (at least [`MIN_SIDE`]) and fill
     /// the rest by repeating the edge pixels, so filtering at the region's border samples itself.
     pub fn pad_pot(&self) -> Self {
@@ -240,6 +285,23 @@ mod tests {
         let img = checker(2048, 1024).fit(512);
         assert_eq!((img.width, img.height), (512, 256));
         assert_eq!(checker(100, 40).fit(512), checker(100, 40));
+    }
+
+    #[test]
+    fn resize_hits_exact_size_and_keeps_solid_colour() {
+        let solid = Rgba {
+            width: 124,
+            height: 20,
+            pixels: [40, 200, 60, 255].repeat(124 * 20),
+        };
+        let r = solid.resize(128, 32);
+        assert_eq!((r.width, r.height), (128, 32));
+        assert!(r.pixels.chunks(4).all(|p| p == [40, 200, 60, 255]));
+        // Transparent neighbours don't darken an opaque texel's colour.
+        let mut half = Rgba::new(2, 1);
+        half.set(0, 0, [200, 100, 50, 255]);
+        let r = half.resize(4, 1);
+        assert_eq!(&r.pixels[4..7], &[200, 100, 50]);
     }
 
     #[test]

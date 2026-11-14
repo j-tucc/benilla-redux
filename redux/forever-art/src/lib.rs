@@ -12,15 +12,40 @@ use std::path::{Path, PathBuf};
 use image::{Rgba, MAX_SIDE};
 use tables::{Atlas, Member};
 
-/// What to pull: atlas names (exact, or a `prefix*`) and whole texture files.
+/// What to pull: atlas name patterns, whole texture files, and which atlases are status-bar fills.
 #[derive(Debug, Default, PartialEq)]
 pub struct Manifest {
     pub atlases: Vec<String>,
     pub files: Vec<String>,
+    /// Atlases drawn as a StatusBar fill. benilla's bar writes its own texcoords (0 to the fill
+    /// fraction, 0 to 1), so their art is resampled to fill its power-of-two texture exactly
+    /// instead of being padded.
+    pub bars: Vec<String>,
+}
+
+/// `*` matches any run of characters, anywhere in the pattern.
+pub fn glob(pattern: &str, name: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return pattern == name;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if !name.starts_with(first) || !name[first.len()..].ends_with(last) {
+        return false;
+    }
+    let mut rest = &name[first.len()..name.len() - last.len()];
+    for part in &parts[1..parts.len() - 1] {
+        match rest.find(part) {
+            Some(i) => rest = &rest[i + part.len()..],
+            None => return false,
+        }
+    }
+    true
 }
 
 impl Manifest {
-    /// Lines `atlas <name|prefix*>` and `file <path.blp>`; `#` starts a comment.
+    /// Lines `atlas <pattern>`, `bar <pattern>` and `file <path.blp>`; `#` starts a comment.
+    /// A `bar` pattern also selects its atlases.
     pub fn parse(text: &str) -> Result<Self, String> {
         let mut m = Manifest::default();
         for (n, raw) in text.lines().enumerate() {
@@ -34,6 +59,7 @@ impl Manifest {
             let value = value.trim().to_lowercase().replace('\\', "/");
             match kind {
                 "atlas" => m.atlases.push(value),
+                "bar" => m.bars.push(value),
                 "file" => m.files.push(value),
                 _ => return Err(format!("line {}: unknown kind {kind:?}", n + 1)),
             }
@@ -42,10 +68,11 @@ impl Manifest {
     }
 
     fn wants(&self, name: &str) -> bool {
-        self.atlases.iter().any(|p| match p.strip_suffix('*') {
-            Some(prefix) => name.starts_with(prefix),
-            None => name == p,
-        })
+        self.atlases.iter().any(|p| glob(p, name)) || self.is_bar(name)
+    }
+
+    pub fn is_bar(&self, name: &str) -> bool {
+        self.bars.iter().any(|p| glob(p, name))
     }
 
     /// The members the manifest names, one per name: where a name has several rows, the first
@@ -216,8 +243,19 @@ pub fn build(
         if region.width == 0 || region.height == 0 {
             continue;
         }
-        let (texture, right, bottom) =
-            emit(&region, &art_dir, &file_stem(&m.name), &game_dir).map_err(|e| e.to_string())?;
+        let stem = file_stem(&m.name);
+        let (texture, right, bottom) = if manifest.is_bar(&m.name) {
+            // A bar fill spans its whole texture: the StatusBar owns the texcoords.
+            let w = image::pot(region.width).min(MAX_SIDE);
+            let h = image::pot(region.height).min(MAX_SIDE);
+            region
+                .resize(w, h)
+                .write_tga(&art_dir.join(format!("{stem}.tga")))
+                .map_err(|e| e.to_string())?;
+            (format!("{game_dir}\\{stem}"), 1.0, 1.0)
+        } else {
+            emit(&region, &art_dir, &stem, &game_dir).map_err(|e| e.to_string())?
+        };
         report.atlases.insert(
             m.name.clone(),
             Entry {
@@ -336,6 +374,24 @@ mod tests {
         assert!(m.wants("circlemask"));
         assert!(!m.wants("circlemask2"));
         assert!(Manifest::parse("bogus x").is_err());
+    }
+
+    #[test]
+    fn globs_and_bars() {
+        assert!(glob(
+            "ui-hud-*-bar-health*",
+            "ui-hud-unitframe-player-portraiton-bar-health-c60"
+        ));
+        assert!(!glob(
+            "ui-hud-*-bar-health*",
+            "ui-hud-unitframe-player-portraiton-bar-mana"
+        ));
+        assert!(glob("*mask", "circlemask"));
+        assert!(glob("exact", "exact") && !glob("exact", "exactly"));
+        assert!(!glob("a*b*c", "acb"));
+        let m = Manifest::parse("bar *-bar-mana*\n").unwrap();
+        assert!(m.is_bar("x-bar-mana-c60") && m.wants("x-bar-mana-c60"));
+        assert!(!m.is_bar("x-bar-health") && !m.wants("x-bar-health"));
     }
 
     #[test]
