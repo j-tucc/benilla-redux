@@ -45,6 +45,25 @@ and are never committed to this repository, which is public. Third-party SDKs wi
 licences (for example the Streamline/DLSS SDK) are also local and gitignored unless their licence
 allows redistribution.
 
+## Redux's crates
+
+`redux/` is its own Cargo workspace (`redux/Cargo.toml`, with its own `Cargo.lock`, started as a
+copy of the root's), so upstream's root manifest and lockfile stay untouched. Upstream crates are
+path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the root's
+(`cp Cargo.lock redux/` and build) so redux builds benilla at upstream's versions.
+
+- `redux/launcher` (`benilla-redux`): the client through `benilla_app::run_with`, with redux's
+  plugins on top. It shares the checkout's `WoW` link, `benilla-config/` and `.probe-identity`
+  with benilla's own launcher. Build and run from `redux/`:
+  `cargo build --release -p benilla-redux`, then `target/release/benilla-redux`.
+- `redux/gfx` (`redux-gfx`): graphics, ported from Elderoth's `elderoth-gfx`. Attribution for
+  code it carries from other projects is in `redux/THIRD-PARTY.md`.
+  - Anti-aliasing and filtering defaults: 8x MSAA and 16x anisotropic filtering, written once
+    into a state folder's `config.toml` (benilla's own `gxMultisample` and `anisotropic`), so the
+    Video options show and keep the player's later choice. The GPU clamps both.
+
+Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignore`).
+
 ## Patch ledger
 
 Every upstream file redux changes, with the reason. Keep it current: a patch with no row here is
