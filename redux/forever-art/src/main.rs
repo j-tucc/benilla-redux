@@ -5,15 +5,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use forever_art::{build, job_json, tables, Build, Manifest};
+use forever_art::{build, job_json, tables, Build, Manifest, Tables};
 
 const USAGE: &str = "\
 usage:
-  forever-art job   --extract <dir> --manifest <file> --install <wow dir> --log <file> --out <job.json> [--product wowf]
-  forever-art build --extract <dir> --manifest <file> --log <file> --addon <dir>
+  forever-art job   --extract <dir> --manifest <files> --install <wow dir> --log <file> --out <job.json> [--product wowf]
+  forever-art build --extract <dir> --manifest <files> --log <files> --addon <dir>
 
-  --extract   wow.export's output folder, holding UiTextureAtlas.csv and UiTextureAtlasMember.csv
-  --log       the wow.export CLI job log (job: where it will go; build: read for FileDataID paths)";
+  --extract   wow.export's output folder, holding the UiTextureAtlas* tables as CSV
+  --manifest  one manifest, or several comma-separated (merged)
+  --log       the wow.export CLI job log (job: where it will go; build: one or several comma-separated,
+              read for FileDataID paths)";
 
 fn main() -> ExitCode {
     match run() {
@@ -48,9 +50,17 @@ fn run() -> Result<(), String> {
         |p: &PathBuf| std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
 
     let extract = PathBuf::from(opt("extract")?);
-    let manifest = Manifest::parse(&read(&PathBuf::from(opt("manifest")?))?)?;
-    let atlases = tables::parse_atlases(&read(&extract.join("UiTextureAtlas.csv"))?)?;
-    let members = tables::parse_members(&read(&extract.join("UiTextureAtlasMember.csv"))?)?;
+    let mut manifest = Manifest::default();
+    for path in opt("manifest")?.split(',') {
+        manifest.merge(Manifest::parse(&read(&PathBuf::from(path))?)?);
+    }
+    let table = |name: &str| read(&extract.join(name));
+    let t = Tables {
+        atlases: tables::parse_atlases(&table("UiTextureAtlas.csv")?)?,
+        members: tables::parse_members(&table("UiTextureAtlasMember.csv")?)?,
+        elements: tables::parse_elements(&table("UiTextureAtlasElement.csv")?)?,
+        slices: tables::parse_slices(&table("UiTextureAtlasElementSliceData.csv")?)?,
+    };
 
     match command.as_str() {
         "job" => {
@@ -60,8 +70,7 @@ fn run() -> Result<(), String> {
             let log = std::path::absolute(opt("log")?).map_err(|e| e.to_string())?;
             let text = job_json(
                 &manifest,
-                &members,
-                &atlases,
+                &t,
                 &opt("install")?,
                 product,
                 &extract.to_string_lossy(),
@@ -72,7 +81,10 @@ fn run() -> Result<(), String> {
             println!("wrote {out}");
         }
         "build" => {
-            let exported = tables::parse_export_log(&read(&PathBuf::from(opt("log")?))?);
+            let mut exported = HashMap::new();
+            for path in opt("log")?.split(',') {
+                exported.extend(tables::parse_export_log(&read(&PathBuf::from(path))?));
+            }
             let addon = PathBuf::from(opt("addon")?);
             let addon_name = addon
                 .file_name()
@@ -86,8 +98,7 @@ fn run() -> Result<(), String> {
                     addon_name: &addon_name,
                 },
                 &manifest,
-                &members,
-                &atlases,
+                &t,
                 &exported,
             )?;
             println!(

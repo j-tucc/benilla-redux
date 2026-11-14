@@ -10,7 +10,17 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use image::{Rgba, MAX_SIDE};
-use tables::{Atlas, Member};
+use tables::{Atlas, Member, Slice};
+
+/// The client's atlas tables, as wow.export wrote them.
+#[derive(Debug, Default)]
+pub struct Tables {
+    pub atlases: HashMap<u32, Atlas>,
+    pub members: Vec<Member>,
+    /// Element id to the name modern code passes to `SetAtlas`.
+    pub elements: HashMap<u32, String>,
+    pub slices: HashMap<u32, Slice>,
+}
 
 /// What to pull: atlas name patterns, whole texture files, and which atlases are status-bar fills.
 #[derive(Debug, Default, PartialEq)]
@@ -67,6 +77,13 @@ impl Manifest {
         Ok(m)
     }
 
+    /// Adds another manifest's lines to this one.
+    pub fn merge(&mut self, other: Manifest) {
+        self.atlases.extend(other.atlases);
+        self.files.extend(other.files);
+        self.bars.extend(other.bars);
+    }
+
     fn wants(&self, name: &str) -> bool {
         self.atlases.iter().any(|p| glob(p, name)) || self.is_bar(name)
     }
@@ -75,17 +92,19 @@ impl Manifest {
         self.bars.iter().any(|p| glob(p, name))
     }
 
-    /// The members the manifest names, one per name: where a name has several rows, the first
-    /// whose sheet is in `have` (if given) wins.
-    pub fn select<'m>(
+    /// The members the manifest names, by their own name or their element's, one per name: where
+    /// a name has several rows, the first whose sheet is in `have` (if given) wins.
+    pub fn select<'t>(
         &self,
-        members: &'m [Member],
-        atlases: &HashMap<u32, Atlas>,
+        t: &'t Tables,
         have: Option<&HashMap<u32, String>>,
-    ) -> Vec<&'m Member> {
+    ) -> Vec<&'t Member> {
         let mut by_name: BTreeMap<&str, &Member> = BTreeMap::new();
-        for m in members.iter().filter(|m| self.wants(&m.name)) {
-            let Some(atlas) = atlases.get(&m.atlas_id) else {
+        let wanted = |m: &&Member| {
+            self.wants(&m.name) || t.elements.get(&m.element_id).is_some_and(|e| self.wants(e))
+        };
+        for m in t.members.iter().filter(wanted) {
+            let Some(atlas) = t.atlases.get(&m.atlas_id) else {
                 continue;
             };
             let usable = have.is_none_or(|h| h.contains_key(&atlas.file_data_id));
@@ -100,17 +119,16 @@ impl Manifest {
 /// The wow.export job that exports every sheet the manifest's atlases live on, plus its files.
 pub fn job_json(
     manifest: &Manifest,
-    members: &[Member],
-    atlases: &HashMap<u32, Atlas>,
+    t: &Tables,
     install: &str,
     product: &str,
     out_dir: &str,
     log: &str,
 ) -> String {
     let fids: std::collections::BTreeSet<u32> = manifest
-        .select(members, atlases, None)
+        .select(t, None)
         .iter()
-        .map(|m| atlases[&m.atlas_id].file_data_id)
+        .map(|m| t.atlases[&m.atlas_id].file_data_id)
         .collect();
     let mut files: Vec<String> = fids.iter().map(|f| format!("{{\"fid\":{f}}}")).collect();
     files.extend(
@@ -157,7 +175,7 @@ pub fn file_stem(name: &str) -> String {
 }
 
 /// One texture the addon can draw: its in-game path and the texcoords of the art inside it.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
     pub texture: String,
     pub width: u32,
@@ -188,28 +206,107 @@ pub struct Build<'a> {
     pub addon_name: &'a str,
 }
 
+/// Nine-slice margins in drawn UI units, and whether the edges tile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Margins {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub tiled: bool,
+}
+
 /// What a build wrote.
 #[derive(Debug, Default)]
 pub struct Report {
     pub atlases: BTreeMap<String, Entry>,
     pub textures: BTreeMap<String, Entry>,
+    /// Nine-slice margins by element name, in drawn units.
+    pub slices: BTreeMap<String, Margins>,
     pub missing_sheets: Vec<u32>,
     pub missing_files: Vec<String>,
+}
+
+/// How Forever ranks an element's members, lowest first: the bronze 1x art, plain 1x, bronze
+/// 2x, plain 2x. Forever draws c60 art wherever an element has it.
+fn member_rank(name: &str) -> u8 {
+    let hi = name.ends_with("-2x");
+    let c60 = name.trim_end_matches("-2x").ends_with("-c60");
+    match (c60, hi) {
+        (true, false) => 0,
+        (false, false) => 1,
+        (true, true) => 2,
+        (false, true) => 3,
+    }
+}
+
+impl Report {
+    /// Modern code asks for an element by name (`SetAtlas("UI-HUD-MicroMenu-Questlog-Up")`) and
+    /// the client picks one of its members; some elements have only `-2x` members. Each element
+    /// whose members were built gets an entry under its own name, from its best member, at its
+    /// drawn size (a 2x member without an override draws at half its pixels), plus its
+    /// nine-slice margins when it has them.
+    fn add_element_aliases(&mut self, built: &[&Member], t: &Tables) {
+        let mut best: BTreeMap<u32, &Member> = BTreeMap::new();
+        for m in built.iter().copied() {
+            if !self.atlases.contains_key(&m.name) {
+                continue;
+            }
+            best.entry(m.element_id)
+                .and_modify(|b| {
+                    if member_rank(&m.name) < member_rank(&b.name) {
+                        *b = m;
+                    }
+                })
+                .or_insert(m);
+        }
+        for (element, m) in best {
+            let Some(name) = t.elements.get(&element) else {
+                continue;
+            };
+            // The member the element's entry comes from: one of its own name, else the best.
+            let source = built.iter().copied().find(|b| &b.name == name).unwrap_or(m);
+            if !self.atlases.contains_key(name) {
+                let mut e = self.atlases[&m.name].clone();
+                if m.name.ends_with("-2x") && !m.overridden {
+                    e.width = e.width.div_ceil(2);
+                    e.height = e.height.div_ceil(2);
+                }
+                self.atlases.insert(name.clone(), e);
+            }
+            if let Some(s) = t.slices.get(&element) {
+                // Slice margins are in the member's pixels; the addon wants drawn units.
+                let e = &self.atlases[name];
+                let sx = e.width as f64 / source.right.saturating_sub(source.left).max(1) as f64;
+                let sy = e.height as f64 / source.bottom.saturating_sub(source.top).max(1) as f64;
+                self.slices.insert(
+                    name.clone(),
+                    Margins {
+                        left: s.left as f64 * sx,
+                        top: s.top as f64 * sy,
+                        right: s.right as f64 * sx,
+                        bottom: s.bottom as f64 * sy,
+                        tiled: s.mode == 1,
+                    },
+                );
+            }
+        }
+    }
 }
 
 pub fn build(
     b: &Build,
     manifest: &Manifest,
-    members: &[Member],
-    atlases: &HashMap<u32, Atlas>,
+    t: &Tables,
     exported: &HashMap<u32, String>,
 ) -> Result<Report, String> {
+    let atlases = &t.atlases;
     let art_dir = b.addon.join("Art");
     std::fs::create_dir_all(&art_dir).map_err(|e| e.to_string())?;
     let game_dir = format!("Interface\\AddOns\\{}\\Art", b.addon_name);
     let mut report = Report::default();
 
-    let wanted = manifest.select(members, atlases, None);
+    let wanted = manifest.select(t, None);
     let missing: HashSet<u32> = wanted
         .iter()
         .map(|m| atlases[&m.atlas_id].file_data_id)
@@ -219,7 +316,8 @@ pub fn build(
     report.missing_sheets.sort();
 
     let mut sheets: HashMap<u32, Rgba> = HashMap::new();
-    for m in manifest.select(members, atlases, Some(exported)) {
+    let built = manifest.select(t, Some(exported));
+    for m in built.iter().copied() {
         let atlas = &atlases[&m.atlas_id];
         let fid = atlas.file_data_id;
         if let std::collections::hash_map::Entry::Vacant(slot) = sheets.entry(fid) {
@@ -267,6 +365,8 @@ pub fn build(
             },
         );
     }
+
+    report.add_element_aliases(&built, t);
 
     for file in &manifest.files {
         let png = png_path(b.extract, file);
@@ -345,6 +445,19 @@ pub fn lua(report: &Report) -> String {
         }
         out.push_str("}\n");
     }
+    out.push_str("-- Nine-slice margins in drawn units: { left, top, right, bottom, tiled }\nBF_SLICES = {\n");
+    for (key, s) in &report.slices {
+        out.push_str(&format!(
+            "[{}] = {{ {}, {}, {}, {}, {} }},\n",
+            lua_str(key),
+            num(s.left),
+            num(s.top),
+            num(s.right),
+            num(s.bottom),
+            u8::from(s.tiled)
+        ));
+    }
+    out.push_str("}\n");
     out
 }
 
@@ -362,6 +475,8 @@ mod tests {
             right: 12,
             top: 1,
             bottom: 5,
+            element_id: 0,
+            overridden: false,
         }
     }
 
@@ -414,11 +529,15 @@ mod tests {
                 },
             ),
         ]);
-        let members = vec![member("a", 1), member("a", 2), member("b", 2)];
+        let t = Tables {
+            atlases,
+            members: vec![member("a", 1), member("a", 2), member("b", 2)],
+            ..Tables::default()
+        };
         let m = Manifest::parse("atlas *").unwrap();
-        assert_eq!(m.select(&members, &atlases, None).len(), 2);
+        assert_eq!(m.select(&t, None).len(), 2);
         let have = HashMap::from([(200, "x".to_string())]);
-        let picked = m.select(&members, &atlases, Some(&have));
+        let picked = m.select(&t, Some(&have));
         assert!(picked.iter().all(|p| p.atlas_id == 2));
     }
 
@@ -432,11 +551,13 @@ mod tests {
                 height: 64,
             },
         )]);
-        let members = vec![member("a", 1), member("b", 1)];
+        let t = Tables {
+            atlases,
+            members: vec![member("a", 1), member("b", 1)],
+            ..Tables::default()
+        };
         let m = Manifest::parse("atlas *\nfile interface/x.blp").unwrap();
-        let j = job_json(
-            &m, &members, &atlases, "C:\\WoW", "wowf", "C:\\out", "C:\\log",
-        );
+        let j = job_json(&m, &t, "C:\\WoW", "wowf", "C:\\out", "C:\\log");
         assert!(j.contains("\"install\":\"C:\\\\WoW\""));
         assert!(j.contains("\"files\":[{\"fid\":100},{\"name\":\"interface/x.blp\"}]"));
     }
@@ -457,6 +578,74 @@ mod tests {
         let text = lua(&r);
         assert!(text.contains("[\"a\\\"b\"] = { \"Interface\\\\AddOns\\\\x\\\\Art\\\\a\", 198, 71, 0, 0.7734375, 0, 0.5546875 },"));
         assert!(text.contains("BF_TEXTURES = {\n}"));
+    }
+
+    fn entry(width: u32, height: u32) -> Entry {
+        Entry {
+            texture: "t".into(),
+            width,
+            height,
+            right: 1.0,
+            bottom: 1.0,
+        }
+    }
+
+    #[test]
+    fn elements_alias_their_best_member() {
+        let el = |name: &str, element_id, overridden, w, h| Member {
+            element_id,
+            overridden,
+            width: w,
+            height: h,
+            left: 0,
+            right: w,
+            top: 0,
+            bottom: h,
+            ..member(name, 1)
+        };
+        let members = vec![
+            el("frame-2x", 7, false, 110, 110),
+            el("frame-c60-2x", 7, false, 110, 110),
+            el("slot", 8, true, 45, 45),
+            el("slot-c60", 8, false, 64, 62),
+            el("own", 9, false, 10, 10),
+        ];
+        let t = Tables {
+            elements: HashMap::from([
+                (7, "frame".to_string()),
+                (8, "slot-el".to_string()),
+                (9, "own".to_string()),
+            ]),
+            slices: HashMap::from([(
+                7,
+                Slice {
+                    left: 16,
+                    top: 20,
+                    right: 16,
+                    bottom: 20,
+                    mode: 1,
+                },
+            )]),
+            ..Tables::default()
+        };
+        let mut r = Report::default();
+        for m in &members {
+            r.atlases.insert(m.name.clone(), entry(m.width, m.height));
+        }
+        let built: Vec<&Member> = members.iter().collect();
+        r.add_element_aliases(&built, &t);
+        // The bronze 2x member wins and draws at half its pixels.
+        assert_eq!(
+            (r.atlases["frame"].width, r.atlases["frame"].height),
+            (55, 55)
+        );
+        // The bronze 1x member beats the plain one, whatever the plain one's override.
+        assert_eq!(r.atlases["slot-el"].width, 64);
+        // A member already named like its element keeps its own entry.
+        assert_eq!(r.atlases["own"].width, 10);
+        // Margins come out in drawn units: half the 2x member's pixels.
+        assert_eq!(r.slices["frame"].top, 10.0);
+        assert!(lua(&r).contains("BF_SLICES = {\n[\"frame\"] = { 8, 10, 8, 10, 1 },\n}"));
     }
 
     #[test]
