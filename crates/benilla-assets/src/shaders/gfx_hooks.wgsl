@@ -98,6 +98,24 @@ fn gfx_lit(
     return vec4<f32>(lit, 1.0);
 }
 
+// A lit exterior surface's colour (gamma, before fog): `rgb` is the stock colour, `albedo` the
+// texel the receiver lit, `light` the light that multiplied it (so `albedo · light` is the lit
+// part of `rgb`), `direct` how much direct light arrives (`gfx_lit`'s w), `world_pos` and `normal`
+// the fragment's. Called by the same lanes as `gfx_lit`, with its kinds. Stock returns `rgb`.
+fn gfx_surface(
+    kind: u32,
+    rgb: vec3<f32>,
+    albedo: vec3<f32>,
+    light: vec3<f32>,
+    direct: f32,
+    world_pos: vec3<f32>,
+    normal: vec3<f32>,
+    camera_pos: vec3<f32>,
+    gfx: GfxData,
+) -> vec3<f32> {
+    return rgb;
+}
+
 // How far the baked shade (terrain MCSH, the doodads' 0.5 band, an entity's ground-shade byte)
 // steps aside at `world_pos`, 0 = the stock bake, 1 = fully replaced by the program's own shadow.
 fn gfx_baked_aside(world_pos: vec3<f32>, camera_pos: vec3<f32>, gfx: GfxData) -> f32 {
