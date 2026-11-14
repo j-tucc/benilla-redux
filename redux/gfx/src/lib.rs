@@ -26,6 +26,7 @@ mod post;
 pub mod prefs;
 pub mod rows;
 mod scatter;
+mod sky;
 
 pub use defaults::session_defaults;
 use prefs::GraphicsPrefs;
@@ -110,7 +111,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(bloom::BloomPlugin)
             .add_plugins(haze::HazePlugin)
             .add_plugins(fog::FogPlugin)
-            .add_plugins(mist::MistPlugin);
+            .add_plugins(mist::MistPlugin)
+            .add_plugins(sky::SkyPlugin);
     }
 }
 
