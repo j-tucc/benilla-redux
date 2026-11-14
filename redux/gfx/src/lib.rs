@@ -15,6 +15,7 @@
 use bevy::prelude::*;
 use std::path::Path;
 
+mod bloom;
 mod defaults;
 mod grading;
 mod hooks;
@@ -101,7 +102,8 @@ impl Plugin for GfxPlugin {
             .add_systems(PreUpdate, (prefs::follow_file, follow_settings).chain())
             .add_systems(Update, report_camera)
             .add_plugins(hooks::HooksPlugin)
-            .add_plugins(grading::GradingPlugin);
+            .add_plugins(grading::GradingPlugin)
+            .add_plugins(bloom::BloomPlugin);
     }
 }
 
