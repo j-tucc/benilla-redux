@@ -61,6 +61,19 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
   - Anti-aliasing and filtering defaults: 8x MSAA and 16x anisotropic filtering, written once
     into a state folder's `config.toml` (benilla's own `gxMultisample` and `anisotropic`), so the
     Video options show and keep the player's later choice. The GPU clamps both.
+  - Enhanced effects, each behind a switch, all off by default (Classic draws benilla's image):
+    wind, modern fog and haze, sky, grading, bloom, sun shadows with dappled sun, moonlight,
+    light shafts, sun rays, sunlit air, ambient occlusion, ground mist, rain wetness and
+    firelight; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
+    (re-read while the client runs): `preset = "enhanced"` turns every effect on with TAA, and
+    `gfx_<name> = true/false`, `gfx_shafts = 0|1|2`, `gfx_aa = 0|1|2` (MSAA, TAA, DLSS),
+    `gfx_dlss = 0..4` (DLAA to Ultra Performance) and `gfx_fg = true` (Frame Generation) adjust
+    it. `REDUX_GFX=enhanced,dlss_q` (or `classic`, or a comma list of effect names) overrides
+    the file for one session.
+  - DLSS needs the `dlss` feature (`cargo build --release -p benilla-redux --features dlss`)
+    and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
+    `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
+    DLSS choice draws as TAA. The boot line `STREAMLINE status=…` says what was found.
 
 Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignore`).
 
