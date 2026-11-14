@@ -28,6 +28,7 @@
     view_transformations::position_world_to_clip,
     mesh_view_bindings::{view, globals},
 }
+#import benilla::{gfx_data, gfx_hooks}
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var frames: texture_2d_array<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(101) var frames_samp: sampler;
@@ -58,6 +59,9 @@ struct WowLight {
     _grade: vec4<f32>,             // 17
     wmo_fog_color: vec4<f32>,      // 18 rgb = interior fog (block 2); w = enable
     wmo_fog_params: vec4<f32>,     // 19 x = start yd; y = end yd
+    _point_count: vec4<f32>,       // 20
+    _points: array<vec4<f32>, 512>, // 21-532 the point-light table, unread here
+    gfx: gfx_data::GfxData,      // the optional graphics' block (`lighting::GfxData`)
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
@@ -124,9 +128,10 @@ fn apply_fog(rgb: vec3<f32>, world_pos: vec3<f32>, room_fog: u32) -> vec3<f32> {
         return rgb;
     }
     let eye_z = -(view.view_from_world * vec4<f32>(world_pos, 1.0)).z;
-    let denom = max(fog_span.y - fog_span.x, 0.001);
-    let factor = clamp((fog_span.y - eye_z) / denom, 0.0, 1.0);
-    return mix(fog_color.xyz, rgb, factor);
+    let fog = gfx_hooks::gfx_fog(
+        fog_color.xyz, fog_span, eye_z, world_pos, view.world_position, true, wow_light.gfx,
+    );
+    return mix(fog.rgb, rgb, fog.w);
 }
 
 @vertex

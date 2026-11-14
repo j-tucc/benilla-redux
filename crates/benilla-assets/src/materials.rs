@@ -24,7 +24,27 @@ pub fn register_shaders(app: &mut App) {
     bevy::asset::embedded_asset!(app, "shaders/wow_model.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/wdl.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/liquid.wgsl");
+    // The program's graphics hook points (`#import benilla::{gfx_data, gfx_hooks}`), loaded
+    // eagerly so every receiver, in this crate or in benilla-world, resolves them. The hooks
+    // module sits at a fixed handle so a program can replace it ([`GFX_HOOKS_SHADER`]).
+    bevy::shader::load_shader_library!(app, "shaders/gfx_data.wgsl");
+    bevy::asset::load_internal_asset!(
+        app,
+        GFX_HOOKS_SHADER,
+        "shaders/gfx_hooks.wgsl",
+        Shader::from_wgsl
+    );
 }
+
+/// The `benilla::gfx_hooks` module: the stock hook bodies the engine's shaders call. A program
+/// replaces them by inserting its own `Shader` at this handle (same import path and signatures,
+/// its own `shader_defs`); every pipeline importing it then recompiles. Re-inserting
+/// [`GFX_HOOKS_WGSL`] restores the stock image.
+pub const GFX_HOOKS_SHADER: Handle<Shader> =
+    bevy::asset::uuid_handle!("6a1f3c2e-8b4d-4e5f-9a7b-0c1d2e3f4a5b");
+
+/// The stock `benilla::gfx_hooks` source.
+pub const GFX_HOOKS_WGSL: &str = include_str!("shaders/gfx_hooks.wgsl");
 
 /// The WDL far-band shader's source, for the tests that live beside the renderer (`wdl.rs`).
 pub const WDL_WGSL: &str = include_str!("shaders/wdl.wgsl");

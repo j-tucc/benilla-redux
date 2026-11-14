@@ -5,6 +5,7 @@
     forward_io::VertexOutput,
     mesh_view_bindings::view,
 }
+#import benilla::{gfx_data, gfx_hooks}
 
 struct SkyColors {
     sky0: vec4<f32>, // zenith (90°)
@@ -16,6 +17,14 @@ struct SkyColors {
     warp: vec4<f32>, // x = dawn/dusk warp strength S (0 = off), y = sun azimuth (rad), zw reserved
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> sky: SkyColors;
+// The shared light buffer, read only for the program's graphics data (`lighting::GfxData`), which
+// follows the 21 header rows and the 512-row point table.
+struct WowLight {
+    _rows: array<vec4<f32>, 21>,
+    _points: array<vec4<f32>, 512>,
+    gfx: gfx_data::GfxData,
+};
+@group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
 // Glow `g` for a sun-relative azimuth phase, sampled linearly like `0x6d0f50` from the reference's
 // six-keyframe wrap-around table at `0xce9af8` (written by `0x6ce210`); 0.125 is the sun bearing.
@@ -82,7 +91,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         col = mix(s1, sky.sky0.rgb, (elev - 16.8) / (90.0 - 16.8)); // warped ring1 to the raw apex
     }
 
+    // The program's sky hook point (the stock hook returns `col`): the same stops, after the warp.
+    let stops = array<vec3<f32>, 6>(sky.fog.rgb, s4, s3, s2c, s1, sky.sky0.rgb);
+    let rgb = gfx_hooks::gfx_sky(col, elev, dir, stops, in.position.xy, wow_light.gfx);
     // Raw gamma out: the reference draws the sky as raw DBC bytes, sRGB off (`0x6d4940`).
-    let rgb = col;
     return vec4<f32>(rgb, 1.0);
 }
