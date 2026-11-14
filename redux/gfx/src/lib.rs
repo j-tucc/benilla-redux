@@ -25,6 +25,7 @@ mod mist;
 mod moonlight;
 mod post;
 pub mod prefs;
+mod rays;
 pub mod rows;
 mod scatter;
 mod shadows;
@@ -120,7 +121,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(wind::WindPlugin)
             .add_plugins(shadows::ShadowsPlugin)
             .add_plugins(moonlight::MoonlightPlugin)
-            .add_plugins(shafts::ShaftsPlugin);
+            .add_plugins(shafts::ShaftsPlugin)
+            .add_plugins(rays::RaysPlugin);
     }
 }
 
