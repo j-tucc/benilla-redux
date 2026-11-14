@@ -142,7 +142,9 @@ impl GxTexturePool {
                 TextureFormat::Bc2RgbaUnorm
                 | TextureFormat::Bc2RgbaUnormSrgb
                 | TextureFormat::Bc3RgbaUnorm
-                | TextureFormat::Bc3RgbaUnormSrgb => {
+                | TextureFormat::Bc3RgbaUnormSrgb
+                | TextureFormat::Bc7RgbaUnorm
+                | TextureFormat::Bc7RgbaUnormSrgb => {
                     u64::from(key.0.width) * u64::from(key.0.height)
                 }
                 _ => u64::from(key.0.width) * u64::from(key.0.height) * 4,

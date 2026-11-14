@@ -389,7 +389,36 @@ pub struct GxWmoBatch {
     pub batch_order: u16,
 }
 
+/// One diverted batch as an inspector sees it ([`StaticGx::items`]).
+#[derive(Clone, Copy, Debug)]
+pub struct GxItemInfo<'a> {
+    /// The batch's texture name as the model authors it, `None` for an untextured batch.
+    pub texture: Option<&'a str>,
+    /// The texture image the batch draws with.
+    pub texture_id: Option<AssetId<bevy::image::Image>>,
+    /// The placement's model path.
+    pub label: &'a str,
+    /// The batch's world box `(min, max)`, when known.
+    pub bounds: Option<(Vec3, Vec3)>,
+}
+
 impl StaticGx {
+    /// Every batch the retained pass holds, cells, WMO regions and props alike, for an inspector
+    /// that has no entities to query. Read-only.
+    pub fn items(&self) -> impl Iterator<Item = GxItemInfo<'_>> {
+        self.cells
+            .values()
+            .chain(self.wmos.values())
+            .chain(self.props.values())
+            .flat_map(|cell| cell.items.iter())
+            .map(|item| GxItemInfo {
+                texture: item.geometry.texture.as_deref(),
+                texture_id: item.texture,
+                label: &item.object.label,
+                bounds: item.world_bounds,
+            })
+    }
+
     /// Regions whose first bake has not published: diverted geometry that nothing draws yet, which
     /// the reveal gate ([`crate::terrain_stream::WorldLoadProgress`]) waits on. A published region
     /// re-baking still draws its previous bake and does not count.

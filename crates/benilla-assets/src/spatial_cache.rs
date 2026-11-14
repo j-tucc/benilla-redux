@@ -77,6 +77,11 @@ impl<K: Eq + Hash, V> SpatialCache<K, V> {
         &mut slot.0
     }
 
+    /// Every entry, uncounted: an inspector's read that must not keep anything alive.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.map.iter().map(|(k, (v, _))| (k, v))
+    }
+
     /// Keep only the entries whose key passes `keep`: an owner dropping what it alone keyed.
     pub fn retain(&mut self, mut keep: impl FnMut(&K) -> bool) {
         self.map.retain(|k, _| keep(k));

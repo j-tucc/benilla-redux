@@ -103,7 +103,13 @@ pub struct TerrainStreamer {
     /// This frame's plan, from [`stream_terrain`] to [`spawn_streamed_tiles`]; `None` on a frame
     /// with nothing to do.
     plan: Option<StreamPlan>,
+    /// Frames left before a [`crate::world_map::WorldReload`] streams again, so the dropped tiles'
+    /// handles and the evicted caches let go first and the next requests load afresh.
+    reload_hold: u32,
 }
+
+/// Frames a world reload waits between the drop and the first new request.
+const RELOAD_HOLD_FRAMES: u32 = 3;
 
 /// What [`stream_terrain`] decided this frame, for the spawn and the residency publish.
 struct StreamPlan {
@@ -505,6 +511,7 @@ impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         // Defaulted here, so a program with no game boots and streams around the camera.
         app.init_resource::<ViewFocus>()
+            .add_message::<crate::world_map::WorldReload>()
             .init_resource::<WorldLoadProgress>()
             .init_resource::<TerrainStreamer>()
             .init_resource::<TerrainResidency>()
@@ -612,6 +619,7 @@ fn stream_terrain(
         Res<crate::view::ViewDistance>,
     ),
     mut load_progress: Option<ResMut<WorldLoadProgress>>,
+    mut reloads: MessageReader<crate::world_map::WorldReload>,
     // The stream-batch accumulators the map-change drop must clear.
     batchers: (
         ResMut<HullWelds>,
@@ -637,6 +645,11 @@ fn stream_terrain(
         return;
     };
 
+    // A world reload drops like a map change, then holds before streaming again.
+    if reloads.read().count() > 0 {
+        state.map_dir = None;
+        state.reload_hold = RELOAD_HOLD_FRAMES;
+    }
     // A new map directory: drop every tile and request the new map's WDT.
     if state.map_dir.as_deref() != Some(dir.as_str()) {
         info!(
@@ -656,6 +669,10 @@ fn stream_terrain(
         state.map_dir = Some(dir.clone());
         state.wdt = Some(asset_server.load(format!("mpq://World/Maps/{dir}/{dir}.wdt")));
         state.wdt_ungated = false;
+    }
+    if state.reload_hold > 0 {
+        state.reload_hold -= 1;
+        return;
     }
     // A failed WDT falls back to ungated probing, warned once per map, never to no world.
     let wdt_index = state.wdt.as_ref().and_then(|h| wdts.get(h));

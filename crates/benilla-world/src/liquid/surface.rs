@@ -424,6 +424,39 @@ pub(super) fn setup_liquid(
     commands.insert_resource(assets);
 }
 
+/// On a [`crate::world_map::WorldReload`], read every kind's frames again (the embedding app's
+/// texture source may have changed) and point that kind's materials at the new array.
+pub(super) fn reload_liquid_frames(
+    mut reloads: MessageReader<crate::world_map::WorldReload>,
+    assets: Option<Res<LiquidAssets>>,
+    world_assets: Option<ResMut<WorldAssets>>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<LiquidMaterial>>,
+) {
+    if reloads.read().count() == 0 {
+        return;
+    }
+    let (Some(assets), Some(mut world_assets)) = (assets, world_assets) else {
+        return;
+    };
+    for &(kind, dir, stem, count) in FRAME_SETS {
+        let Some((frames, frame_count)) =
+            load_frame_array(&mut world_assets, &mut images, kind, dir, stem, count)
+        else {
+            continue;
+        };
+        for (key, entry) in &assets.materials {
+            if key.kind != kind {
+                continue;
+            }
+            if let Some(material) = materials.get_mut(&entry.material) {
+                material.extension.frames = frames.clone();
+                material.extension.anim.y = frame_count as f32;
+            }
+        }
+    }
+}
+
 /// Decode frames `1..=count` with their authored mips into one repeating, anisotropic array,
 /// stopping at the first missing, non-square or mis-sized frame; returns it and the count loaded.
 fn load_frame_array(
