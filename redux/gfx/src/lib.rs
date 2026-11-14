@@ -22,6 +22,7 @@ mod grading;
 mod haze;
 mod hooks;
 mod mist;
+mod moonlight;
 mod post;
 pub mod prefs;
 pub mod rows;
@@ -116,7 +117,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(mist::MistPlugin)
             .add_plugins(sky::SkyPlugin)
             .add_plugins(wind::WindPlugin)
-            .add_plugins(shadows::ShadowsPlugin);
+            .add_plugins(shadows::ShadowsPlugin)
+            .add_plugins(moonlight::MoonlightPlugin);
     }
 }
 
