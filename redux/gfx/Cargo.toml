@@ -1,0 +1,19 @@
+[package]
+name = "redux-gfx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "benilla-redux's graphics: MSAA/anisotropy defaults, TAA, DLSS and the Enhanced effects, ported from Elderoth's elderoth-gfx"
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy.workspace = true
+benilla-world.workspace = true
+benilla-assets.workspace = true
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+
+[features]
+dlss = []
