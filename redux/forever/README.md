@@ -64,4 +64,5 @@ A manifest has one entry per line:
 - **The addon:**
   - The `addon_harness` probe.
   - A live run on the test account with a scratch `BENILLA_HOME` whose `config.toml` sets `gxWindow = "1"` (windowed, never fullscreen).
+  - That run goes through `redux/tools/offscreen.ps1`. The helper keeps the window off every monitor and never activates it, so it covers no one's screen. A minimized window renders at 0×0, which gives a 1×1 `WOW_LIVE_SHOT`; off-screen, the shot is full size.
   - `WOW_PROBE_LUA` that calls `BF_SetAtlas` and checks `Texture:SetTexture`'s 1/nil answer for every generated texture.
