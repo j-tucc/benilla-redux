@@ -918,10 +918,23 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
             directional_shadow_textures_comparison_sampler,
             wow_light.gfx,
         );
-        lit_rgb = base.rgb * lit.rgb;
+        var lit_albedo = base.rgb;
         if (is_wmo) {
-            lit_rgb = base.rgb * m.tint.rgb * lit.rgb;
+            lit_albedo = base.rgb * m.tint.rgb;
         }
+        lit_rgb = lit_albedo * lit.rgb;
+        // The program's surface hook (`gfx_hooks::gfx_surface`, the colour unchanged stock).
+        lit_rgb = gfx_hooks::gfx_surface(
+            select(gfx_hooks::GFX_LIT_MODEL, gfx_hooks::GFX_LIT_UNIT, unit),
+            lit_rgb,
+            lit_albedo,
+            lit.rgb,
+            lit.w,
+            in.world_position.xyz,
+            in.world_normal,
+            view.world_position.xyz,
+            wow_light.gfx,
+        );
     }
     // The unlit path: an M2's unlit program outputs `c28 + c29` (`0x70c663`-`0x70c693` fold the
     // tint·M2Color term into `c29` beside the highlight), so the texel modulates

@@ -380,8 +380,10 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
     // whose vertex colour is inside its clamp.
     // The program's light hook on the exterior lanes (stock: the light unchanged).
     var primary = in.primary;
-    if ((in.word & (WORD_INTERIOR | WORD_UNLIT)) == 0u) {
-        primary = gfx_hooks::gfx_lit(
+    let hooked = (in.word & (WORD_INTERIOR | WORD_UNLIT)) == 0u;
+    var direct = 1.0;
+    if (hooked) {
+        let lit = gfx_hooks::gfx_lit(
             gfx_hooks::GFX_LIT_STATIC,
             in.primary,
             in.unsunned,
@@ -391,9 +393,25 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
             shadow_map,
             shadow_cmp,
             wow_light.gfx,
-        ).rgb;
+        );
+        primary = lit.rgb;
+        direct = lit.w;
     }
     var rgb = base.rgb * primary;
+    if (hooked) {
+        // The program's surface hook (`gfx_hooks::gfx_surface`, the colour unchanged stock).
+        rgb = gfx_hooks::gfx_surface(
+            gfx_hooks::GFX_LIT_STATIC,
+            rgb,
+            base.rgb,
+            primary,
+            direct,
+            in.world_position.xyz,
+            in.normal,
+            view.world_position,
+            wow_light.gfx,
+        );
+    }
     if ((in.word & WORD_WMO) != 0u && (in.word & WORD_INTERIOR) != 0u) {
         if ((in.word & WORD_CLASS_TRANS) != 0u) {
             // TRANS: the lit pass by MOCV.a (blend 9) under the unlit `tex × MOCV` by 1 − MOCV.a

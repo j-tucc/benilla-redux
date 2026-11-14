@@ -245,7 +245,19 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
     //   specular = sheen · mask · shadow                 (none in shadow)
     let diffuse_term = color * primary * (0.3 * shadow_lit + 0.7);
     let spec_term = in.specular * specmask * (shadow_lit * lit.w);
-    var tuned = clamp(diffuse_term + spec_term, vec3<f32>(0.0), vec3<f32>(1.0));
+    // The program's surface hook (`gfx_hooks::gfx_surface`, the sum unchanged stock).
+    let surface = gfx_hooks::gfx_surface(
+        gfx_hooks::GFX_LIT_TERRAIN,
+        diffuse_term + spec_term,
+        color,
+        primary * (0.3 * shadow_lit + 0.7),
+        shadow_lit * lit.w,
+        in.world_position.xyz,
+        in.normal,
+        view.world_position.xyz,
+        wow_light.gfx,
+    );
+    var tuned = clamp(surface, vec3<f32>(0.0), vec3<f32>(1.0));
 
     // Gamma-space GL_LINEAR fog on planar eye-Z, as the reference computes `fogcoord`, not radial
     // distance. Per pixel matches its per-vertex fog, since a linear factor interpolates exactly.
