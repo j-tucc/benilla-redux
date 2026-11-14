@@ -28,6 +28,7 @@ pub mod prefs;
 pub mod rows;
 mod scatter;
 mod shadows;
+mod shafts;
 mod sky;
 mod wind;
 
@@ -118,7 +119,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(sky::SkyPlugin)
             .add_plugins(wind::WindPlugin)
             .add_plugins(shadows::ShadowsPlugin)
-            .add_plugins(moonlight::MoonlightPlugin);
+            .add_plugins(moonlight::MoonlightPlugin)
+            .add_plugins(shafts::ShaftsPlugin);
     }
 }
 
