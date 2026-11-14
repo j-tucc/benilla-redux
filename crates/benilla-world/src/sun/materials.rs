@@ -42,6 +42,11 @@ impl MaterialExtension for CelestialExt {
         "embedded://benilla_world/shaders/celestial.wgsl".into()
     }
 
+    /// A sky element never casts.
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn specialize(
         _pipeline: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,
@@ -72,6 +77,11 @@ impl MaterialExtension for StarExt {
 
     fn fragment_shader() -> ShaderRef {
         "embedded://benilla_world/shaders/star.wgsl".into()
+    }
+
+    /// A sky element never casts.
+    fn enable_shadows() -> bool {
+        false
     }
 
     fn specialize(

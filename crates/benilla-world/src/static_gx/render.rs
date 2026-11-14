@@ -34,6 +34,9 @@ use std::ops::Range;
 use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
 use bevy::core_pipeline::core_3d::CORE_3D_DEPTH_FORMAT;
 
+/// The depth-only casters into the world camera's directional shadow views.
+mod shadow;
+
 /// One baked item's draw facts, in bake order: the vertex word's low bits index its record.
 #[derive(Clone)]
 pub(crate) struct GxItemDraw {
@@ -166,6 +169,9 @@ struct GxGpuCache {
 struct GxPipelines {
     view_layout: BindGroupLayoutDescriptor,
     cell_layout: BindGroupLayoutDescriptor,
+    /// Group 2 of the colour pipelines: the world view's directional shadow array and comparison
+    /// sampler, which the program's light hook may read.
+    shadow_layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
     sampler_clamp: Sampler,
     /// Keyed `(cutout, two_sided)`, re-specialized if the world view's (samples, format) changes.
@@ -199,6 +205,16 @@ fn init_pipelines(mut commands: Commands, render_device: Res<RenderDevice>) {
             ),
         ),
     );
+    let shadow_layout = BindGroupLayoutDescriptor::new(
+        "static_gx_shadow_layout",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d_array(TextureSampleType::Depth),
+                sampler(SamplerBindingType::Comparison),
+            ),
+        ),
+    );
     // Repeat and clamp samplers, picked by the vertex word's wrap bits since a shared array has no
     // per-layer address mode. Mip filter and anisotropy come from `benilla_assets::tex_filter`,
     // the policy the reference applies to every texture from `[0x835250]`/`[0x835254]`. A
@@ -220,6 +236,7 @@ fn init_pipelines(mut commands: Commands, render_device: Res<RenderDevice>) {
     commands.insert_resource(GxPipelines {
         view_layout,
         cell_layout,
+        shadow_layout,
         sampler: make("static_gx_repeat", AddressMode::Repeat),
         sampler_clamp: make("static_gx_clamp", AddressMode::ClampToEdge),
         pipelines: HashMap::default(),
@@ -314,7 +331,11 @@ fn prepare_static_gx(
                     label: Some(
                         format!("static_gx c{} t{}", u8::from(cutout), u8::from(two_sided)).into(),
                     ),
-                    layout: vec![pipes.view_layout.clone(), pipes.cell_layout.clone()],
+                    layout: vec![
+                        pipes.view_layout.clone(),
+                        pipes.cell_layout.clone(),
+                        pipes.shadow_layout.clone(),
+                    ],
                     vertex: VertexState {
                         shader: shader.clone(),
                         shader_defs: defs.clone(),
@@ -621,9 +642,10 @@ fn kill_bit(killed: &[u64], i: usize) -> u32 {
     )
 }
 
-/// Group 0: bevy's view uniform and the `wow_shared_light` storage every material binds.
+/// Group 0: bevy's view uniform and the `wow_shared_light` storage every material binds; and the
+/// colour pipelines' group 2, the world view's directional shadow array.
 #[derive(Resource)]
-struct GxViewBind(BindGroup);
+struct GxViewBind(BindGroup, Option<BindGroup>);
 
 fn prepare_view_bind(
     mut commands: Commands,
@@ -632,16 +654,35 @@ fn prepare_view_bind(
     render_device: Res<RenderDevice>,
     view_uniforms: Res<ViewUniforms>,
     light: Option<Res<crate::lighting::SharedLightBuffer>>,
+    shadow_samplers: Option<Res<bevy::pbr::ShadowSamplers>>,
+    world_view: Query<&bevy::pbr::ViewShadowBindings, With<StaticGxView>>,
 ) {
     let (Some(view_binding), Some(light)) = (view_uniforms.uniforms.binding(), light) else {
         return;
     };
     let layout = pipeline_cache.get_bind_group_layout(&pipes.view_layout);
-    commands.insert_resource(GxViewBind(render_device.create_bind_group(
-        "static_gx_view",
-        &layout,
-        &BindGroupEntries::sequential((view_binding, light.0.as_entire_binding())),
-    )));
+    let shadow = world_view
+        .iter()
+        .next()
+        .zip(shadow_samplers)
+        .map(|(bindings, samplers)| {
+            render_device.create_bind_group(
+                "static_gx_shadow",
+                &pipeline_cache.get_bind_group_layout(&pipes.shadow_layout),
+                &BindGroupEntries::sequential((
+                    &bindings.directional_light_depth_texture_view,
+                    &samplers.directional_light_comparison_sampler,
+                )),
+            )
+        });
+    commands.insert_resource(GxViewBind(
+        render_device.create_bind_group(
+            "static_gx_view",
+            &layout,
+            &BindGroupEntries::sequential((view_binding, light.0.as_entire_binding())),
+        ),
+        shadow,
+    ));
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
@@ -674,6 +715,9 @@ impl ViewNode for StaticGxNode {
         let pipes = world.resource::<GxPipelines>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let Some(view_bind) = world.get_resource::<GxViewBind>() else {
+            return Ok(());
+        };
+        let Some(shadow_bind) = view_bind.1.as_ref() else {
             return Ok(());
         };
         let meshes = world.resource::<RenderAssets<RenderMesh>>();
@@ -728,6 +772,7 @@ impl ViewNode for StaticGxNode {
         });
         let span = diagnostics.pass_span(&mut pass, "static_gx");
         pass.set_bind_group(0, &view_bind.0, &[view_offset.offset]);
+        pass.set_bind_group(2, shadow_bind, &[]);
         for (gpu, draw, sel) in &resolved {
             let Some(mesh) = meshes.get(draw.mesh.id()) else {
                 continue;
@@ -790,6 +835,9 @@ pub(super) fn build(app: &mut App) {
             (
                 prepare_static_gx.in_set(RenderSystems::PrepareResources),
                 prepare_view_bind.in_set(RenderSystems::PrepareBindGroups),
+                shadow::prepare_shadow_casters
+                    .in_set(RenderSystems::PrepareResources)
+                    .after(prepare_static_gx),
             ),
         )
         .add_render_graph_node::<ViewNodeRunner<StaticGxNode>>(Core3d, StaticGxLabel)
@@ -800,6 +848,7 @@ pub(super) fn build(app: &mut App) {
             Core3d,
             (Node3d::StartMainPass, StaticGxLabel, Node3d::MainOpaquePass),
         );
+    shadow::build(render_app);
 }
 
 /// Copy the collector's published half into the extractable resource.
