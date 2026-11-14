@@ -17,6 +17,8 @@ use std::path::Path;
 
 mod bloom;
 mod defaults;
+#[cfg(feature = "dlss")]
+pub mod dlss;
 mod firelight;
 mod fog;
 mod grading;
@@ -131,6 +133,9 @@ impl Plugin for GfxPlugin {
             .add_plugins(wetness::WetnessPlugin)
             .add_plugins(firelight::FirelightPlugin)
             .add_plugins(taa::TaaPlugin);
+        #[cfg(feature = "dlss")]
+        app.add_plugins((dlss::FramePlugin, dlss::SrPlugin, dlss::FgPlugin))
+            .add_systems(PreUpdate, frame_gen_bridge);
     }
 }
 
@@ -203,4 +208,48 @@ fn report_camera(
 /// redux's own settings file in the state folder, beside benilla's `config.toml`.
 pub fn settings_path(config_dir: &Path) -> std::path::PathBuf {
     config_dir.join("redux-gfx.toml")
+}
+
+/// Frames Frame Generation must have been off before the window goes back to its vsync present
+/// mode: DLSS-G is off for the swap chain's recreation. A few presents (Elderoth's value).
+#[cfg(feature = "dlss")]
+const VSYNC_BACK_AFTER: u32 = 10;
+
+/// Holds Frame Generation off while the client shows no world: no active world camera (the glue
+/// screens), or a world still streaming in (DLSS-G guide, section 6.4). While it runs the window
+/// presents without vsync, which DLSS-G requires (Reflex paces the frames), and the vsync mode it
+/// had comes back once it is off. Ported from Elderoth's `gfx_bridge::frame_gen`.
+#[cfg(feature = "dlss")]
+fn frame_gen_bridge(
+    mut frame_gen: ResMut<FrameGen>,
+    cameras: Query<&Camera, With<benilla_world::view::WorldCamera>>,
+    progress: Option<Res<benilla_world::terrain_stream::WorldLoadProgress>>,
+    mut window: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
+    mut vsync: Local<Option<bevy::window::PresentMode>>,
+    mut off_for: Local<u32>,
+) {
+    use bevy::window::PresentMode;
+    let world = cameras.iter().any(|c| c.is_active) && progress.is_some_and(|p| p.presentable());
+    let hold = !world;
+    if frame_gen.hold != hold {
+        frame_gen.hold = hold;
+    }
+    let Ok(mut window) = window.single_mut() else {
+        return;
+    };
+    if frame_gen.on && dlss::fg_ready() {
+        *off_for = 0;
+        if matches!(
+            window.present_mode,
+            PresentMode::Fifo | PresentMode::FifoRelaxed | PresentMode::AutoVsync
+        ) {
+            *vsync = Some(window.present_mode);
+            window.present_mode = PresentMode::AutoNoVsync;
+        }
+    } else if vsync.is_some() {
+        *off_for += 1;
+        if *off_for >= VSYNC_BACK_AFTER {
+            window.present_mode = vsync.take().unwrap_or_default();
+        }
+    }
 }
