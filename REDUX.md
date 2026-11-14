@@ -74,6 +74,19 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
     `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
     DLSS choice draws as TAA. The boot line `STREAMLINE status=…` says what was found.
+- `redux/packs` (`redux-packs`): HD texture packs and HD icons, ported from Elderoth's
+  `benilla-adapter`. Nothing is committed: both are read from a local `classic-overrides/` folder
+  found beside or above the checkout (or the binary): `texture-packs/<pack>/textures/*.dds` (BC7,
+  full mips, optional `pack.json` and `index.json`) and `ICONS/<IconName>.tga`.
+  `REDUX_TEXTURE_PACKS=<folder>` and `REDUX_HD_ICONS=<folder>|off` point elsewhere.
+  - Choose in `benilla-config/redux-textures.toml`: `texture_pack = "<pack name>"` (default
+    `"vanilla"`) and `hd_icons = true` (default false). Changing `texture_pack` while the client
+    runs switches the pack live (images reload, then the world rebuilds); HD icons follow the file
+    on restart. `REDUX_TEXTURE_PACK=<name>` pins a pack for one session. Unattended runs use
+    vanilla and stock icons unless the variables name them.
+  - Character skins stay stock (benilla composites them on the CPU from the archives).
+  - Boot lines `TEXTURE_PACKS …`, `TEXTURE_PACK on/off …` and `HD_ICONS …` say what was found;
+    `REDUX_TEXTURE_PROBE=<seconds>` prints what the pack served by then.
 
 Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignore`).
 

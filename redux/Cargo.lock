@@ -642,6 +642,7 @@ dependencies = [
  "benilla-world",
  "bevy",
  "redux-gfx",
+ "redux-packs",
  "toml",
 ]
 
@@ -5582,6 +5583,19 @@ dependencies = [
  "serde",
  "toml",
  "wgpu",
+]
+
+[[package]]
+name = "redux-packs"
+version = "0.1.0"
+dependencies = [
+ "benilla-assets",
+ "benilla-formats",
+ "benilla-world",
+ "bevy",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
