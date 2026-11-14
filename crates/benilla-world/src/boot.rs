@@ -8,7 +8,7 @@ use crate::thread_qos;
 
 /// `DefaultPlugins` with benilla's engine tuning applied, around the caller's primary window.
 pub fn tuned_default_plugins(primary_window: Window) -> PluginGroupBuilder {
-    DefaultPlugins
+    let plugins = DefaultPlugins
         .set(WindowPlugin {
             primary_window: Some(primary_window),
             ..default()
@@ -68,5 +68,17 @@ pub fn tuned_default_plugins(primary_window: Window) -> PluginGroupBuilder {
         // No bevy AA: no Fxaa/TAA/SMAA/CAS component anywhere (MSAA is core render, unaffected).
         .disable::<bevy::anti_alias::AntiAliasPlugin>()
         // No gamepad input; 1.12's bindings are keyboard/mouse.
-        .disable::<bevy::gilrs::GilrsPlugin>()
+        .disable::<bevy::gilrs::GilrsPlugin>();
+    match RENDER_CREATION.lock().ok().and_then(|mut c| c.take()) {
+        Some(render_creation) => plugins.set(bevy::render::RenderPlugin {
+            render_creation,
+            ..default()
+        }),
+        None => plugins,
+    }
 }
+
+/// A render device a launcher created itself (an interposed Vulkan device), taken by the next
+/// [`tuned_default_plugins`]; set it before the app is built. Unset, Bevy creates its own.
+pub static RENDER_CREATION: std::sync::Mutex<Option<bevy::render::settings::RenderCreation>> =
+    std::sync::Mutex::new(None);
