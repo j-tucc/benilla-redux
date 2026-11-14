@@ -746,6 +746,16 @@ impl WorldAssets {
         if let Some(handle) = self.textures.fetch(&key) {
             return Some(handle);
         }
+        // An embedding app's replacement world art (ground clutter binds through here), if any.
+        let blp = format!("{}.blp", key.0);
+        if let Some(t) = crate::texture_source::replacement(&blp, crate::bc_supported()) {
+            let size = (t.width, t.height);
+            let image =
+                crate::blp::world_art_levels(size, t.mip_count, t.format, t.chain.to_vec(), wrap);
+            let handle = images.add(image);
+            self.textures.insert(key, handle.clone());
+            return Some(handle);
+        }
         // World art uploads as the file stores it; nothing reads it main-side.
         let chain = model_texture_chain(&self.chain.lock_recover(), path)?;
         let handle = images.add(repeat_texture_authored(crate::for_upload(chain), wrap));

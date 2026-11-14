@@ -44,6 +44,8 @@ mod wdt;
 pub use adt::{chunk_to_mesh, chunks_to_mesh, AdtLoader, AdtTile, ChunkShading};
 pub use wdt::{WdtIndex, WdtIndexLoader};
 mod blp;
+mod texture_source;
+pub use texture_source::{set_world_texture_source, TextureOverride, WorldTextureSource};
 mod tga_chain;
 pub use blp::{BlpImageLoader, BlpLoaderSettings, BlpVariant};
 /// Whether this GPU takes WoW's stored DXT blocks, and the chain form that follows.
