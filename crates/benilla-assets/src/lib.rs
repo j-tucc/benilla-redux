@@ -36,6 +36,10 @@ pub use model::{
 };
 mod adt;
 mod terrain;
+mod terrain_source;
+pub use terrain_source::{
+    set_terrain_layer_source, LayerOverride, TerrainLayerSource, TileLayerReport,
+};
 mod wdt;
 pub use adt::{chunk_to_mesh, chunks_to_mesh, AdtLoader, AdtTile, ChunkShading};
 pub use wdt::{WdtIndex, WdtIndexLoader};
