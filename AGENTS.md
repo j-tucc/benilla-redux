@@ -1,5 +1,11 @@
 # benilla
 
+<!-- REDUX-BEGIN -->
+**This checkout is benilla-redux, a fork. Read [`REDUX.md`](REDUX.md) first: its rules (redux code
+in redux-owned files, upstream changes only as tiny recorded patches, no Blizzard install content
+committed) take precedence over everything below.**
+<!-- REDUX-END -->
+
 A from-scratch World of Warcraft 1.12.1 client in Rust and Bevy. The reference client is the
 spec: benilla is a faithful, modern implementation of it, not a place to get creative.
 
