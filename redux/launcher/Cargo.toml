@@ -20,6 +20,7 @@ benilla-app.workspace = true
 benilla-formats = { path = "../../crates/benilla-formats" }
 benilla-world.workspace = true
 redux-gfx = { path = "../gfx" }
+redux-packs = { path = "../packs" }
 bevy.workspace = true
 toml = "0.8"
 

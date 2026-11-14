@@ -44,6 +44,22 @@ fn streamline_device(project_dir: &str, state_dir: Option<&std::path::Path>) {
     }
 }
 
+/// Where the shared `classic-overrides/` folder (texture packs, HD icons) is looked for: beside or
+/// above the checkout, then the binary's folder.
+fn override_starts(project_dir: &str) -> Vec<std::path::PathBuf> {
+    let mut starts = Vec::new();
+    if !project_dir.is_empty() {
+        starts.push(project_dir.into());
+    }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Into::into))
+    {
+        starts.push(dir);
+    }
+    starts
+}
+
 fn main() -> benilla_app::AppExit {
     let project_dir = project_dir();
     // Resolve the state folder from the redux checkout before the app is built, so redux's
@@ -53,6 +69,7 @@ fn main() -> benilla_app::AppExit {
     redux_gfx::session_defaults(state_dir.as_deref());
     #[cfg(feature = "dlss")]
     streamline_device(project_dir, state_dir.as_deref());
+    let textures = redux_packs::boot(state_dir.clone(), &override_starts(project_dir));
     redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
@@ -65,6 +82,7 @@ fn main() -> benilla_app::AppExit {
         ..Default::default()
     };
     benilla_app::run_with(build, |app| {
-        app.add_plugins(redux_gfx::GfxPlugin);
+        app.add_plugins(redux_gfx::GfxPlugin)
+            .add_plugins(redux_packs::PacksPlugin(textures));
     })
 }
