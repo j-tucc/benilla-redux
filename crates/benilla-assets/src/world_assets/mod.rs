@@ -789,8 +789,12 @@ impl WorldAssets {
         if let Some(cached) = self.cache.sprites.get(&key) {
             return cached;
         }
-        let loaded = decode_texture(&self.chain, &self.loose, path, open)
-            .map(|(w, h, rgba)| images.add(sprite_image(w, h, rgba)));
+        let loaded = crate::texture_source::ui_sprite(&key, false)
+            .map(|image| images.add(image))
+            .or_else(|| {
+                decode_texture(&self.chain, &self.loose, path, open)
+                    .map(|(w, h, rgba)| images.add(sprite_image(w, h, rgba)))
+            });
         let open = loose_open_for(path, open);
         self.cache.sprites.insert(key, open, loaded.clone());
         loaded
@@ -840,8 +844,12 @@ impl WorldAssets {
         if let Some(cached) = self.cache.tiled.get(&key) {
             return cached;
         }
-        let loaded = decode_texture(&self.chain, &self.loose, path, LooseOpen::Index)
-            .map(|(w, h, rgba)| images.add(sprite_image_tiled(w, h, rgba)));
+        let loaded = crate::texture_source::ui_sprite(&key, true)
+            .map(|image| images.add(image))
+            .or_else(|| {
+                decode_texture(&self.chain, &self.loose, path, LooseOpen::Index)
+                    .map(|(w, h, rgba)| images.add(sprite_image_tiled(w, h, rgba)))
+            });
         let open = loose_open_for(path, LooseOpen::Index);
         self.cache.tiled.insert(key, open, loaded.clone());
         loaded

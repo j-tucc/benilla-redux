@@ -46,8 +46,8 @@ pub use wdt::{WdtIndex, WdtIndexLoader};
 mod blp;
 mod texture_source;
 pub use texture_source::{
-    liquid_frame_array_override, set_world_texture_source, world_texture_override, TextureOverride,
-    WorldTextureSource,
+    liquid_frame_array_override, set_ui_sprite_source, set_world_texture_source,
+    world_texture_override, TextureOverride, UiSpriteSource, WorldTextureSource,
 };
 mod tga_chain;
 pub use blp::{BlpImageLoader, BlpLoaderSettings, BlpVariant};

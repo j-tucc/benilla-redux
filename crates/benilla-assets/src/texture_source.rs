@@ -147,6 +147,29 @@ fn invalid(t: &TextureOverride) -> Option<String> {
     (t.chain.len() != want).then(|| format!("{} bytes, want {want}", t.chain.len()))
 }
 
+/// Supplies a whole replacement UI sprite (an icon) by [`crate::sprite_key`], `tiled` for a load
+/// with the wrap flag. Called on the main thread at a sprite's first use; the stock size still
+/// lays the sprite out. Deviation: 1.12.1 has no UI art replacement; no benilla setting reaches it.
+pub trait UiSpriteSource: Send + Sync + 'static {
+    fn sprite(&self, key: &str, tiled: bool) -> Option<Image>;
+}
+
+static UI_SPRITE_SOURCE: RwLock<Option<Arc<dyn UiSpriteSource>>> = RwLock::new(None);
+
+/// Install (`Some`) or remove (`None`) the process's UI sprite source, for sprites first used
+/// afterwards.
+pub fn set_ui_sprite_source(source: Option<Arc<dyn UiSpriteSource>>) {
+    *UI_SPRITE_SOURCE.write().unwrap_or_else(|p| p.into_inner()) = source;
+}
+
+pub(crate) fn ui_sprite(key: &str, tiled: bool) -> Option<Image> {
+    let source = UI_SPRITE_SOURCE
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()?;
+    source.sprite(key, tiled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
