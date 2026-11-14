@@ -1,6 +1,9 @@
 # benilla-forever milestone 2: action bars, micro menu, bags bar and the XP/reputation bars.
 # Patterns match member names and the element names Forever's code passes to SetAtlas.
 atlas ui-hud-actionbar-*
+# "!" and "_" prefix the vertically and horizontally tiled pieces (divider centres).
+atlas !ui-hud-actionbar-*
+atlas _ui-hud-actionbar-*
 atlas ui-hud-micromenu-*
 atlas ui-hud-experiencebar-*
 

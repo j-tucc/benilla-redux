@@ -161,17 +161,20 @@ fn json_str(s: &str) -> String {
     out
 }
 
-/// A file-name-safe form of an atlas name.
+/// A file-name-safe form of an atlas name. `!` (vertically tiled art) gets its own spelling so
+/// `!x` and `_x`, which are different atlases, never share a file.
 pub fn file_stem(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c.to_ascii_lowercase()
-            } else {
-                '_'
+    let mut out = String::new();
+    for c in name.chars() {
+        match c {
+            '!' => out.push_str("v_"),
+            c if c.is_ascii_alphanumeric() || c == '-' || c == '_' => {
+                out.push(c.to_ascii_lowercase())
             }
-        })
-        .collect()
+            _ => out.push('_'),
+        }
+    }
+    out
 }
 
 /// One texture the addon can draw: its in-game path and the texcoords of the art inside it.
@@ -652,7 +655,8 @@ mod tests {
     fn stems_are_file_safe() {
         assert_eq!(
             file_stem("!RaidFrame-Absorb Edge"),
-            "_raidframe-absorb_edge"
+            "v_raidframe-absorb_edge"
         );
+        assert_ne!(file_stem("!a-center"), file_stem("_a-center"));
     }
 }
