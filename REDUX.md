@@ -99,6 +99,12 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
 
 Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignore`).
 
+## Tools
+
+- [`redux/headless/README.md`](redux/headless/README.md): run the client with no visible window
+  and write screenshots to disk (`python redux/headless/shoot.py`), for agents testing on a
+  machine someone is using.
+
 ## Patch ledger
 
 Every upstream file redux changes, with the reason. Keep it current: a patch with no row here is
