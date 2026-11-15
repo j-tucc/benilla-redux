@@ -5,7 +5,7 @@
 # benilla is built with; refresh it from the root's after an upstream merge.
 [workspace]
 resolver = "2"
-members = ["launcher", "gfx", "packs", "smooth"]
+members = ["launcher", "gfx", "packs", "smooth", "options"]
 # Their own workspaces (`redux/headless`, `redux/cursor`); the launcher uses their plugins as path dependencies.
 exclude = ["headless", "cursor"]
 

@@ -1,0 +1,19 @@
+[package]
+name = "redux-options"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "benilla-redux's options pages in benilla's Options window: graphics, textures and cursor size"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+benilla-ui = { path = "../../crates/benilla-ui" }
+bevy.workspace = true
+redux-gfx = { path = "../gfx" }
+redux-packs = { path = "../packs" }
+toml = "0.8"
+# Writes keep the files' comments and the keys the pages do not own.
+toml_edit = "0.22"
