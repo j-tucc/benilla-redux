@@ -70,6 +70,9 @@ fn main() -> benilla_app::AppExit {
     #[cfg(feature = "dlss")]
     streamline_device(project_dir, state_dir.as_deref());
     let textures = redux_packs::boot(state_dir.clone(), &override_starts(project_dir));
+    let smooth = redux_smooth::SmoothPlugin {
+        config_dir: state_dir.clone(),
+    };
     redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
@@ -83,6 +86,7 @@ fn main() -> benilla_app::AppExit {
     };
     benilla_app::run_with(build, |app| {
         app.add_plugins(redux_gfx::GfxPlugin)
-            .add_plugins(redux_packs::PacksPlugin(textures));
+            .add_plugins(redux_packs::PacksPlugin(textures))
+            .add_plugins(smooth);
     })
 }

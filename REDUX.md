@@ -87,6 +87,15 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
   - Character skins stay stock (benilla composites them on the CPU from the archives).
   - Boot lines `TEXTURE_PACKS …`, `TEXTURE_PACK on/off …` and `HD_ICONS …` say what was found;
     `REDUX_TEXTURE_PROBE=<seconds>` prints what the pack served by then.
+  - F8 (dev builds) opens the texture bug reporter: every texture in view with its source (pack
+    file or vanilla); pick one, add a note, and it saves `benilla-config/texture-reports/<stamp>_<name>/`
+    (`report.json`, `screenshot.png`) plus a line in `texture-reports/reports.jsonl`.
+- `redux/smooth` (`redux-smooth`): smoothed character models, ported from Elderoth's
+  `benilla-adapter/src/smooth` (without its chest rig): one level of PN-triangle refinement over
+  every skinned part of a `Character\` model, built once per mesh and swapped in from outside
+  benilla (no engine patch). Off by default: `smooth_characters = true` in
+  `benilla-config/redux-gfx.toml` (followed live), or `REDUX_SMOOTH=1|0` for a session.
+  `REDUX_SMOOTH_PROBE=<seconds>` prints how many parts were smoothed and the cost.
 
 Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignore`).
 
