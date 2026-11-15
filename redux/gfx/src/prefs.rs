@@ -55,6 +55,10 @@ pub struct GraphicsPrefs {
     pub rays: bool,
     /// Fires, braziers and lanterns light the ground and walls round them, with a flicker.
     pub firelight: bool,
+    /// WoW Forever's water: refraction, depth colour, reflections, glints, foam (`water.rs`).
+    pub water: bool,
+    /// Rolling waves on ocean and lake, under [`Self::water`].
+    pub waves: bool,
     /// The world's anti-aliasing: [`AA_MSAA`], [`AA_TAA`], [`AA_DLSS`] or [`AA_METALFX`].
     pub aa: u8,
     /// DLSS's mode while the anti-aliasing is DLSS: 0 DLAA … 4 Ultra Performance.
@@ -65,7 +69,7 @@ pub struct GraphicsPrefs {
 
 impl GraphicsPrefs {
     /// The file's keys, in its order.
-    pub const KEYS: [&'static str; 17] = [
+    pub const KEYS: [&'static str; 19] = [
         "gfx_wind",
         "gfx_fog",
         "gfx_sky",
@@ -83,6 +87,8 @@ impl GraphicsPrefs {
         "gfx_firelight",
         "gfx_dlss",
         "gfx_fg",
+        "gfx_water",
+        "gfx_waves",
     ];
 
     /// Every effect on.
@@ -101,6 +107,8 @@ impl GraphicsPrefs {
         scatter: true,
         rays: true,
         firelight: true,
+        water: true,
+        waves: true,
         aa: AA_TAA,
         dlss: DLSS_DLAA,
         fg: false,
@@ -122,6 +130,8 @@ impl GraphicsPrefs {
             "gfx_rays" => Some(&mut self.rays),
             "gfx_firelight" => Some(&mut self.firelight),
             "gfx_fg" => Some(&mut self.fg),
+            "gfx_water" => Some(&mut self.water),
+            "gfx_waves" => Some(&mut self.waves),
             _ => None,
         }
     }
@@ -168,7 +178,7 @@ impl GraphicsPrefs {
 
 /// `$REDUX_GFX`: `classic`, `enhanced`, or a comma list of effect names (`wind`, `fog`, `sky`,
 /// `grading`, `bloom`, `shadows`, `moonlight`, `shafts` (Medium) or `shafts_high`, `ssao`, `mist`,
-/// `wetness`, `scatter`, `rays`, `firelight`), one anti-aliasing (`msaa`, `taa`, `dlss`, a DLSS
+/// `wetness`, `scatter`, `rays`, `firelight`, `water`, `waves`), one anti-aliasing (`msaa`, `taa`, `dlss`, a DLSS
 /// mode `dlaa`/`dlss_q`/`dlss_b`/`dlss_p`/`dlss_up`, `metalfx`) and `fg`. `None` when unreadable.
 pub fn parse_forced(v: &str) -> Option<GraphicsPrefs> {
     let mut p = GraphicsPrefs::default();

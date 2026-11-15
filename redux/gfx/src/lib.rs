@@ -36,6 +36,7 @@ mod shafts;
 mod sky;
 mod ssao;
 mod taa;
+mod water;
 mod wetness;
 mod wind;
 
@@ -132,7 +133,8 @@ impl Plugin for GfxPlugin {
             .add_plugins(ssao::SsaoPlugin)
             .add_plugins(wetness::WetnessPlugin)
             .add_plugins(firelight::FirelightPlugin)
-            .add_plugins(taa::TaaPlugin);
+            .add_plugins(taa::TaaPlugin)
+            .add_plugins(water::WaterPlugin);
         #[cfg(feature = "dlss")]
         app.add_plugins((dlss::FramePlugin, dlss::SrPlugin, dlss::FgPlugin))
             .add_systems(PreUpdate, frame_gen_bridge);

@@ -63,13 +63,21 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     Video options show and keep the player's later choice. The GPU clamps both.
   - Enhanced effects, each behind a switch, all off by default (Classic draws benilla's image):
     wind, modern fog and haze, sky, grading, bloom, sun shadows with dappled sun, moonlight,
-    light shafts, sun rays, sunlit air, ambient occlusion, ground mist, rain wetness and
-    firelight; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
+    light shafts, sun rays, sunlit air, ambient occlusion, ground mist, rain wetness,
+    firelight, and Forever water with waves; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
     (re-read while the client runs): `preset = "enhanced"` turns every effect on with TAA, and
     `gfx_<name> = true/false`, `gfx_shafts = 0|1|2`, `gfx_aa = 0|1|2` (MSAA, TAA, DLSS),
     `gfx_dlss = 0..4` (DLAA to Ultra Performance) and `gfx_fg = true` (Frame Generation) adjust
     it. `REDUX_GFX=enhanced,dlss_q` (or `classic`, or a comma list of effect names) overrides
     the file for one session.
+  - Forever water (`gfx_water`, `redux/gfx/src/water.rs`): WoW Forever's look on open water
+    (ocean, river, lake) and WMO exterior water. Refraction and depth absorption read a copy of
+    the opaque scene taken before the water draws, so MSAA keeps working. The water also gets
+    screen-space reflections with a sky fallback, sun and moon glints, caustics, shore foam,
+    soft edges against geometry and Snell's window from below. `gfx_waves` adds Gerstner swell on
+    ocean and lake. Magma, slime and interior pools keep the stock shader. The surfaces swap onto
+    redux's own material from outside the engine, with no upstream patch.
+    `REDUX_WATER_DEBUG=1|2|3` paints the copied depth, the water column or the copied colour.
   - DLSS needs the `dlss` feature (`cargo build --release -p benilla-redux --features dlss`)
     and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
     `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
