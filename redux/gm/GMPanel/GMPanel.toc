@@ -1,0 +1,10 @@
+## Interface: 11200
+## Title: GM Panel
+## Notes: /gm - a searchable panel for vmangos GM commands
+## Author: JTU
+## SavedVariables: GMPanelDB
+GMPanel_Data.lua
+Catalog.lua
+Core.lua
+Search.lua
+Panel.lua

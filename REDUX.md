@@ -115,6 +115,10 @@ Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignor
 - **Cursor Size** (`redux/cursor`): the cursor drawn at a chosen size (Default, 32x32 … 128x128)
   or the display's DPI, set in `redux-cursor.toml`, `REDUX_CURSOR_SIZE`, or by an options addon
   through the `reduxCursorSize` CVar. See `redux/cursor/README.md`.
+- **GM Panel** (`redux/gm`): `/gm`, a searchable window for vmangos GM commands, as a 1.12 addon
+  installed into `benilla-config/AddOns` by `python redux/gm/install.py`. Its item, teleport,
+  creature, quest and spell names are generated from the local vmangos DB and never committed.
+  See `redux/gm/README.md`.
 
 ## Patch ledger
 
