@@ -1,0 +1,34 @@
+# benilla-forever milestone 1: player, target, target-of-target and party frames.
+# Atlas names and texture paths are the ones Forever's Blizzard_UnitFrame code references.
+atlas ui-hud-unitframe-*
+atlas circlemask
+atlas squaremask
+file interface/targetingframe/ui-statusbar.blp
+file interface/targetingframe/ui-statusbar-glow.blp
+file interface/raidframe/absorb-edge.blp
+file interface/raidframe/shield-overlay.blp
+file interface/raidframe/raid-bar-hp-fill.blp
+file interface/buttons/ui-debuff-overlays.blp
+file interface/lfgframe/ui-lfg-icon-portraitroles.blp
+
+# StatusBar fills: resampled to fill their texture (benilla's bar owns the texcoords).
+bar ui-hud-unitframe-*-bar-health
+bar ui-hud-unitframe-*-bar-health-c60
+bar ui-hud-unitframe-*-bar-mana
+bar ui-hud-unitframe-*-bar-mana-c60
+bar ui-hud-unitframe-*-bar-rage
+bar ui-hud-unitframe-*-bar-rage-c60
+bar ui-hud-unitframe-*-bar-energy
+bar ui-hud-unitframe-*-bar-energy-c60
+bar ui-hud-unitframe-*-bar-focus
+bar ui-hud-unitframe-*-bar-focus-c60
+bar ui-hud-unitframe-*-bar-health-2x
+bar ui-hud-unitframe-*-bar-health-c60-2x
+bar ui-hud-unitframe-*-bar-mana-2x
+bar ui-hud-unitframe-*-bar-mana-c60-2x
+bar ui-hud-unitframe-*-bar-rage-2x
+bar ui-hud-unitframe-*-bar-rage-c60-2x
+bar ui-hud-unitframe-*-bar-energy-2x
+bar ui-hud-unitframe-*-bar-energy-c60-2x
+bar ui-hud-unitframe-*-bar-focus-2x
+bar ui-hud-unitframe-*-bar-focus-c60-2x
