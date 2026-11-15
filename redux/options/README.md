@@ -5,7 +5,7 @@ under benilla's own categories, with three pages.
 
 | Page | Rows | File (in `benilla-config/`) | Applies |
 |---|---|---|---|
-| Enhanced Graphics | Preset (Classic, Enhanced, Custom), Anti-aliasing (MSAA, TAA, DLSS), DLSS Mode, Frame Generation; Effects: Foliage Wind, Modern Fog, Enhanced Sky, Colour Grading, Bloom, Sun Shadows, Moonlight, Light Shafts (Off, Medium, High), Ambient Occlusion, Ground Mist, Wet Surfaces, Sunlit Air, Sun Rays, Firelight; Models: Smooth Characters | `redux-gfx.toml` | live |
+| Enhanced Graphics | Preset (Classic, Enhanced, Custom), Anti-aliasing (MSAA, TAA, DLSS), DLSS Mode, Frame Generation; Effects: Foliage Wind, Modern Fog, Enhanced Sky, Colour Grading, Bloom, Sun Shadows, Moonlight, Light Shafts (Off, Medium, High), Ambient Occlusion, Ground Mist, Wet Surfaces, Sunlit Air, Sun Rays, Firelight, Forever Water, Water Waves; Models: Smooth Characters | `redux-gfx.toml` | live |
 | Textures | Texture Pack (Vanilla or any pack under `classic-overrides/texture-packs`); HD Icons, Pack Interface Art | `redux-textures.toml` | pack live; icons and interface art on restart (the group title says so) |
 | General | Display: Cursor Size (Default, 32x32 … 128x128), with WoW Forever's stepper arrows either side of the dropdown; Controls: Loot Window At Cursor | `redux-cursor.toml`, through redux-cursor's `reduxCursorSize` CVar; `redux-loot.toml` | live; loot at the next loot |
 
