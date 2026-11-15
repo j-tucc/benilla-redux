@@ -1,6 +1,6 @@
-//! benilla-redux's options pages: *Enhanced Graphics*, *Textures* and *General* (Cursor Size), a
-//! `benilla-redux` group in benilla's own Options window, so every redux setting can be changed
-//! in game instead of in `benilla-config/*.toml`.
+//! benilla-redux's options pages: *Enhanced Graphics*, *Textures* and *General* (Cursor Size, Loot
+//! Window At Cursor), a `benilla-redux` group in benilla's own Options window, so every redux
+//! setting can be changed in game instead of in `benilla-config/*.toml`.
 //!
 //! benilla's Options window keeps its categories and rows in Lua globals
 //! (`BENILLA_OPTIONS_CATEGORY_KEYS`, `BENILLA_OPTIONS_PAGE_ROWS`) and builds rows from virtual

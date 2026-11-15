@@ -62,6 +62,8 @@ REDUX_TIP_PACK_UI = "Frames, buttons and the login screens from the texture pack
     .. "when a pack is chosen.\n\nApplies on restart."
 REDUX_TIP_CURSOR = "The size of the mouse cursor. Default is the original 32x32 at the display's "
     .. "scale."
+REDUX_TIP_LOOT_AT_CURSOR = "Opens the loot window with its first item under the mouse cursor, "
+    .. "kept on the screen. Off, it opens at the left of the screen, as the original game does."
 
 -- ── Host bridge ──
 
@@ -300,6 +302,10 @@ local function BuildGeneral(key)
     Steppers(row)
     table.insert(BENILLA_OPTIONS_PAGE_ROWS[key], "RowCursorSize")
     table.insert(REDUX_OPTIONS.controls[key], "RowCursorSize")
+
+    -- WoW Forever's Controls > Loot Window At Cursor (redux/loot/README.md).
+    Header(key, "HeadControls", "Controls")
+    Check(key, "RowLootAtCursor", "loot_at_cursor", "Loot Window At Cursor", "REDUX_TIP_LOOT_AT_CURSOR")
 end
 
 -- ── Hooks into benilla's page functions, for these pages only ──

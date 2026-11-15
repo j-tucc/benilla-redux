@@ -644,6 +644,7 @@ dependencies = [
  "redux-cursor",
  "redux-gfx",
  "redux-headless",
+ "redux-loot",
  "redux-options",
  "redux-packs",
  "redux-smooth",
@@ -5612,12 +5613,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "redux-loot"
+version = "0.1.0"
+dependencies = [
+ "benilla-ui",
+ "bevy",
+ "toml",
+]
+
+[[package]]
 name = "redux-options"
 version = "0.1.0"
 dependencies = [
  "benilla-ui",
  "bevy",
  "redux-gfx",
+ "redux-loot",
  "redux-packs",
  "toml",
  "toml_edit 0.22.27",

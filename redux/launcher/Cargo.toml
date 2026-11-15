@@ -24,6 +24,8 @@ redux-packs = { path = "../packs" }
 redux-smooth = { path = "../smooth" }
 # The in-game options pages for every redux setting (`redux/options/README.md`).
 redux-options = { path = "../options" }
+# Loot Window At Cursor (`redux/loot/README.md`).
+redux-loot = { path = "../loot" }
 # Cursor Size (`redux/cursor/README.md`).
 redux-cursor = { path = "../cursor", default-features = false }
 # Hidden-window screenshot runs for agents (`REDUX_HEADLESS=1`, `redux/headless/README.md`); inert otherwise.

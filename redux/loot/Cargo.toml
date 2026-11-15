@@ -1,0 +1,15 @@
+[package]
+name = "redux-loot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "benilla-redux's Loot Window At Cursor: the loot window opens with its first row under the mouse"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+benilla-ui = { path = "../../crates/benilla-ui" }
+bevy.workspace = true
+toml = "0.8"

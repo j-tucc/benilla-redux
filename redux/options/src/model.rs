@@ -1,6 +1,6 @@
 //! What the pages show and what a change writes: every value is read from, and every change
-//! written to, the same TOML keys the redux crates follow (`redux-gfx.toml`, `redux-textures.toml`),
-//! so their live reload and their defaults keep working unchanged.
+//! written to, the same TOML keys the redux crates follow (`redux-gfx.toml`, `redux-textures.toml`,
+//! `redux-loot.toml`), so their live reload and their defaults keep working unchanged.
 //!
 //! Values cross into Lua as strings: `"1"`/`"0"` for a switch, a choice's index, a pack's name.
 //! The `preset` row is derived, never stored on its own: `"0"` Classic (every effect off, MSAA),
@@ -18,6 +18,7 @@ pub const VANILLA: &str = redux_packs::VANILLA;
 pub struct Files {
     pub gfx: PathBuf,
     pub textures: PathBuf,
+    pub loot: PathBuf,
 }
 
 impl Files {
@@ -25,6 +26,7 @@ impl Files {
         Self {
             gfx: redux_gfx::settings_path(state_dir),
             textures: redux_packs::settings_path(state_dir),
+            loot: redux_loot::settings_path(state_dir),
         }
     }
 }
@@ -106,6 +108,7 @@ pub fn values(files: &Files) -> BTreeMap<String, String> {
     };
     v.insert("hd_icons".into(), tex_flag("hd_icons", false));
     v.insert("pack_ui".into(), tex_flag("pack_ui", true));
+    v.insert(redux_loot::KEY.into(), flag(redux_loot::read(&files.loot)));
     v
 }
 
@@ -233,6 +236,16 @@ pub fn apply(files: &Files, change: &Change) -> std::io::Result<bool> {
             doc[key] = toml_edit::value(on);
             write(&files.textures, &doc)?;
         }
+        redux_loot::KEY => {
+            // Off is the absence of the key, so the file stays as small as a hand-written one.
+            let mut doc = document(&files.loot);
+            if on {
+                doc[key] = toml_edit::value(true);
+            } else {
+                doc.remove(key);
+            }
+            write(&files.loot, &doc)?;
+        }
         "defaults" => match value {
             "ReduxGraphics" => {
                 let mut doc = document(&files.gfx);
@@ -291,6 +304,7 @@ mod tests {
         assert_eq!(v["hd_icons"], "0");
         assert_eq!(v["pack_ui"], "1");
         assert_eq!(v["smooth_characters"], "0");
+        assert_eq!(v["loot_at_cursor"], "0");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -357,6 +371,21 @@ mod tests {
         let v = values(&files);
         assert_eq!(v["texture_pack"], VANILLA);
         assert_eq!((v["gfx_shafts"].as_str(), v["preset"].as_str()), ("0", "0"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loot_at_cursor_round_trips_through_redux_loot_toml() {
+        let (dir, files) = scratch("loot");
+        set(&files, "loot_at_cursor", "1");
+        assert_eq!(values(&files)["loot_at_cursor"], "1");
+        // The loot crate reads the same file.
+        assert!(redux_loot::read(&files.loot));
+        set(&files, "loot_at_cursor", "0");
+        assert_eq!(values(&files)["loot_at_cursor"], "0");
+        assert!(!std::fs::read_to_string(&files.loot)
+            .unwrap()
+            .contains("loot_at_cursor"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

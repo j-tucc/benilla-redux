@@ -119,6 +119,11 @@ Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignor
   installed into `benilla-config/AddOns` by `python redux/gm/install.py`. Its item, teleport,
   creature, quest and spell names are generated from the local vmangos DB and never committed.
   See `redux/gm/README.md`.
+- **Loot Window At Cursor** (`redux/loot`): WoW Forever's option. When it's on, the loot window
+  opens with its first item under the cursor, kept on the screen. Off by default (the stock left
+  panel place). Set it in `redux-loot.toml` (`loot_at_cursor = true`) or on the options page. A
+  redux-owned Lua hook on `LootFrame_OnEvent`, with no upstream file changes. See
+  `redux/loot/README.md`.
 - **In-game options** (`redux/options`): a **benilla-redux** group in benilla's Options window
   (Enhanced Graphics, Textures, General) for every setting above, writing the same TOML keys, so
   nothing needs a hand-edited file. Added from outside through the window's Lua tables and row

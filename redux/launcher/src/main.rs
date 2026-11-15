@@ -79,6 +79,9 @@ fn main() -> benilla_app::AppExit {
     let options = redux_options::OptionsPlugin {
         state_dir: state_dir.clone(),
     };
+    let loot = redux_loot::LootPlugin {
+        state_dir: state_dir.clone(),
+    };
     redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
@@ -96,6 +99,7 @@ fn main() -> benilla_app::AppExit {
             .add_plugins(smooth)
             .add_plugins(cursor)
             .add_plugins(options)
+            .add_plugins(loot)
             .add_plugins(redux_headless::HeadlessPlugin);
     })
 }
