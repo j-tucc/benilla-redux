@@ -643,6 +643,7 @@ dependencies = [
  "bevy",
  "redux-gfx",
  "redux-packs",
+ "redux-smooth",
  "toml",
 ]
 
@@ -5593,8 +5594,19 @@ dependencies = [
  "benilla-formats",
  "benilla-world",
  "bevy",
+ "bevy_egui",
  "serde",
  "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "redux-smooth"
+version = "0.1.0"
+dependencies = [
+ "benilla-assets",
+ "benilla-world",
+ "bevy",
  "toml",
 ]
 

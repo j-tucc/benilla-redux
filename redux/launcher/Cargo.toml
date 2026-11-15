@@ -11,7 +11,7 @@ workspace = true
 [features]
 # The dev/player seam, as benilla's launcher: `--no-default-features` is the player build.
 default = ["dev"]
-dev = ["benilla-app/dev"]
+dev = ["benilla-app/dev", "redux-packs/reporter"]
 # DLSS through NVIDIA Streamline (redux-gfx's `dlss`); the SDK itself is loaded at run time.
 dlss = ["redux-gfx/dlss"]
 
@@ -21,6 +21,7 @@ benilla-formats = { path = "../../crates/benilla-formats" }
 benilla-world.workspace = true
 redux-gfx = { path = "../gfx" }
 redux-packs = { path = "../packs" }
+redux-smooth = { path = "../smooth" }
 bevy.workspace = true
 toml = "0.8"
 
