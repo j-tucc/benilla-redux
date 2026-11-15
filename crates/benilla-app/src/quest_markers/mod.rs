@@ -365,6 +365,13 @@ fn build_markers(
                             Transform::IDENTITY,
                         ))
                         .id();
+                    // The `!` glow shell's authored alpha (0.4), composed into the tag by the unit
+                    // lane as an attach model's is; without it the additive shell whites the `!`.
+                    if let Some(anim) = &sub.alpha_anim {
+                        commands
+                            .entity(child)
+                            .insert(benilla_world::doodad_anim::MatAnim::resting(anim.clone()));
+                    }
                     if let Some(h) = &host {
                         if use_rig {
                             commands

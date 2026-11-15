@@ -64,12 +64,22 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
   - Enhanced effects, each behind a switch, all off by default (Classic draws benilla's image):
     wind, modern fog and haze, sky, grading, bloom, sun shadows with dappled sun, moonlight,
     light shafts, sun rays, sunlit air, ambient occlusion, ground mist, rain wetness,
-    firelight and fog light glow; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
+    firelight, fog light glow, and Forever water with waves; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
     (re-read while the client runs): `preset = "enhanced"` turns every effect on with TAA, and
     `gfx_<name> = true/false`, `gfx_shafts = 0|1|2`, `gfx_aa = 0|1|2` (MSAA, TAA, DLSS),
     `gfx_dlss = 0..4` (DLAA to Ultra Performance) and `gfx_fg = true` (Frame Generation) adjust
     it. `REDUX_GFX=enhanced,dlss_q` (or `classic`, or a comma list of effect names) overrides
     the file for one session.
+  - Forever water (`gfx_water`, `redux/gfx/src/water.rs`): WoW Forever's look on open water
+    (ocean, river, lake) and WMO exterior water. Refraction and depth absorption read a copy of
+    the opaque scene taken before the water draws, so MSAA keeps working. The water also gets
+    screen-space reflections with a sky fallback, sun and moon glints, caustics, shore foam,
+    soft edges against geometry and Snell's window from below. `gfx_waves` adds an FFT ocean
+    (`redux/gfx/src/ocean.rs`, three GPU cascades, one fixed prevailing wind): a choppy, displaced
+    swell with breaking-crest foam on the ocean, whose meshes are subdivided for it, and a gentle
+    chop on lakes and rivers. Magma, slime and interior pools keep the stock shader. The surfaces swap onto
+    redux's own material from outside the engine, with no upstream patch.
+    `REDUX_WATER_DEBUG=1|2|3` paints the copied depth, the water column or the copied colour.
   - DLSS needs the `dlss` feature (`cargo build --release -p benilla-redux --features dlss`)
     and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
     `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
@@ -171,3 +181,4 @@ a bug.
 | `crates/benilla-assets/src/adt.rs`, `crates/benilla-assets/src/blp.rs`, `crates/benilla-assets/src/lib.rs`, `crates/benilla-assets/src/terrain_source.rs`, `crates/benilla-assets/src/texture_source.rs`, `crates/benilla-world/src/liquid/surface.rs` | +150/-27 | A pack can be switched while the client runs, so both sources become swappable (`RwLock<Option<…>>`), and the Effect/PointSprite lanes and the liquid frame arrays (engine-internal reads) ask the source too. Unset, unchanged. |
 | `crates/benilla-assets/src/spatial_cache.rs`, `crates/benilla-world/src/liquid/mod.rs`, `crates/benilla-world/src/liquid/surface.rs`, `crates/benilla-world/src/static_gx/mod.rs`, `crates/benilla-world/src/static_gx/pool.rs`, `crates/benilla-world/src/terrain_stream.rs`, `crates/benilla-world/src/world_map.rs` | +106/-5 | After a pack switch every texture must be read again, but the streamer, map-scoped caches, static_gx texture pool and liquid frame arrays are private; adds a `WorldReload` message that runs the map-change evictions for the same map, plus read-only `StaticGx::items()` and `SpatialCache::iter()` for the texture reporter. Never sent, nothing changes. |
 | `crates/benilla-assets/src/lib.rs`, `crates/benilla-assets/src/texture_source.rs`, `crates/benilla-assets/src/world_assets/mod.rs` | +37/-6 | HD icons replace UI sprites, which `WorldAssets` decodes, uploads and caches privately on the main thread, so nothing outside can swap them. Adds `UiSpriteSource`, asked at the two UI sprite upload sites (`sprite_texture_opened`, `sprite_texture_wrapped`) only, so layout sizes (`sprite_dimensions`) stay stock. Unset, unchanged. |
+| `crates/benilla-app/src/quest_markers/mod.rs` | +7 | A bug fix, not a hook: the overhead `!` markers never attached their glow shell's authored alpha (`MatAnim`, 0.4), so the additive shell drew at full strength and whited the gold `!` (and the grey and green ones). The marker parts are spawned privately inside the module. To be reported upstream; drop this row when upstream fixes it. |
