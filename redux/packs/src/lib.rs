@@ -22,6 +22,8 @@ use std::sync::Arc;
 pub mod catalog;
 mod dds;
 mod icons;
+#[cfg(feature = "reporter")]
+mod report;
 pub mod switch;
 
 pub use catalog::{ActivePack, PackCatalog, VANILLA};
@@ -115,6 +117,8 @@ impl Plugin for PacksPlugin {
             .insert_resource(boot)
             .add_plugins(switch::PackSwitchPlugin)
             .add_systems(Update, (catalog::texture_probe, icon_probe));
+        #[cfg(feature = "reporter")]
+        app.add_plugins(report::TextureReportPlugin);
     }
 }
 

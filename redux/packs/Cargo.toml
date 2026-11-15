@@ -16,3 +16,9 @@ benilla-formats = { path = "../../crates/benilla-formats" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+# The F8 texture reporter's window: egui's lists and text input, which bevy_ui lacks. Dev builds
+# only (the launcher's `dev`), where benilla's own panels hand egui's keyboard focus to the game.
+bevy_egui = { version = "0.39.1", default-features = false, features = ["render", "default_fonts"], optional = true }
+
+[features]
+reporter = ["dep:bevy_egui"]
