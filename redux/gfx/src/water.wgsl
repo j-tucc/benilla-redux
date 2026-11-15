@@ -1,6 +1,6 @@
 // Forever water (`water.rs`): the open water and WMO exterior water surfaces, drawn in the stock
-// liquid's place in the transparent pass. Rolling Gerstner waves (vertex displacement on ocean and
-// lake, normals everywhere), three scrolling layers of a procedural ripple map, depth absorption
+// liquid's place in the transparent pass. The FFT ocean's waves (`ocean.wgsl`: vertex displacement
+// on ocean and lake, normals and breaking-crest foam everywhere), depth absorption
 // and in-scatter coloured by the zone's own `Light.dbc` water bands, refraction of the scene
 // copied before the water (`water_copy.wgsl`), screen-space reflection with a sky fallback, a
 // fresnel blend, sun and moon glints, caustics on the refracted bottom, shore foam and a soft
@@ -49,6 +49,11 @@ struct WaterShared {
 // b = height, a = caustic focus.
 @group(#{MATERIAL_BIND_GROUP}) @binding(105) var ripple: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(106) var ripple_samp: sampler;
+// The FFT ocean (`ocean.rs`), one layer per cascade, repeating: disp = (Dx, Dy, Dz, Dxz) and
+// slope = (dDy/dx, dDy/dz, dDx/dx, dDz/dz), in yd at full (open ocean) height.
+@group(#{MATERIAL_BIND_GROUP}) @binding(108) var ocean_disp: texture_2d_array<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(109) var ocean_samp: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(110) var ocean_slope: texture_2d_array<f32>;
 
 // The prefix of the shared global light (`lighting::global_light`), as `liquid.wgsl` declares it.
 struct WowLight {
@@ -71,18 +76,18 @@ struct WowLight {
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
-// redux's wind row (`rows.rs` WIND_A): xy = the wind's direction on world XZ, zero when off.
-const WIND_A: u32 = 4u;
-// The ripple map's slope range: rg = 0..1 covers [-SLOPE_RANGE, SLOPE_RANGE] (`water.rs`).
-const SLOPE_RANGE: f32 = 2.0;
-// Gravity in yd/s², for the deep-water dispersion ω = sqrt(g·k).
-const GRAVITY: f32 = 10.7;
+// The ocean's prevailing wind on world XZ (`ocean.rs` WIND): fixed, as the spectrum is.
+const WIND: vec2<f32> = vec2<f32>(0.8, 0.6);
+// Each cascade's patch side, yd (`ocean.rs` LENGTHS).
+const LENGTHS: vec3<f32> = vec3<f32>(311.0, 67.0, 17.0);
+// How far the crests pull together (the horizontal displacement's scale).
+const CHOP: f32 = 1.15;
 const PI: f32 = 3.14159265;
 
 struct WaterVsOut {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
-    // The undisplaced surface point; the waves' normals are evaluated there.
+    // The undisplaced surface point; the waves' normals are sampled there.
     @location(1) rest: vec3<f32>,
     @location(2) uv: vec2<f32>,
     // x = the authored depth coordinate V; y = this vertex's wave amplitude scale.
@@ -93,69 +98,31 @@ fn time() -> f32 {
     return globals.time;
 }
 
-fn wind_dir() -> vec2<f32> {
-    let d = wow_light.gfx.rows[WIND_A].xy;
-    if dot(d, d) < 1e-4 {
-        return vec2<f32>(0.8, 0.6);
-    }
-    return normalize(d);
-}
-
 fn rotate(d: vec2<f32>, a: f32) -> vec2<f32> {
     let c = cos(a);
     let s = sin(a);
     return vec2<f32>(c * d.x - s * d.y, s * d.x + c * d.y);
 }
 
-// One Gerstner wave: wavelength (yd), amplitude (yd), direction angle off the wind (rad).
-struct Wave {
-    len: f32,
-    amp: f32,
-    angle: f32,
+// Each cascade's weight on this lane: the open ocean takes the whole field; lakes and rivers keep
+// a little of the long swell and more of the short chop; WMO water (flat) only the chop.
+fn cascade_weights() -> vec3<f32> {
+    if w.lane.x > 0.5 {
+        return vec3<f32>(1.0, 1.0, 1.0);
+    }
+    if w.lane.y > 0.5 {
+        return vec3<f32>(0.0, 0.25, 0.6);
+    }
+    return vec3<f32>(0.06, 0.35, 0.7);
 }
 
-// The swell: the first three displace vertices (an MCLQ vertex is 4.2 yd apart, so only these
-// long waves sample cleanly), all five shape the per-pixel normal.
-const WAVES: array<Wave, 5> = array<Wave, 5>(
-    Wave(34.0, 0.38, 0.0),
-    Wave(21.0, 0.24, 0.62),
-    Wave(14.0, 0.13, -0.48),
-    Wave(8.5, 0.06, 1.10),
-    Wave(5.3, 0.03, -1.25),
-);
-const DISPLACED: u32 = 3u;
-// Gerstner steepness: how much the crests sharpen (horizontal pull).
-const STEEP: f32 = 0.55;
-
-// The displacement of the rest point `p` (world XZ) at amplitude scale `s`.
+// The displacement of the rest point `p` (world XZ) at amplitude scale `s`: the two long cascades
+// (the short one is finer than the mesh). The chop's level is coarsened to the vertex spacing.
 fn swell_offset(p: vec2<f32>, s: f32) -> vec3<f32> {
-    let wind = wind_dir();
-    var off = vec3<f32>(0.0);
-    for (var i = 0u; i < DISPLACED; i++) {
-        let wv = WAVES[i];
-        let k = 2.0 * PI / wv.len;
-        let d = rotate(wind, wv.angle);
-        let phase = k * dot(d, p) - sqrt(GRAVITY * k) * time();
-        let q = STEEP / (k * f32(DISPLACED)) * s;
-        off += vec3<f32>(d.x * q * cos(phase), wv.amp * s * sin(phase), d.y * q * cos(phase));
-    }
-    return off;
-}
-
-// The swell's surface slope (dy/dx, dy/dz) at `p`, every wave, scale `s`; `far` fades the short
-// waves out with distance.
-fn swell_slope(p: vec2<f32>, s: f32, far: f32) -> vec2<f32> {
-    let wind = wind_dir();
-    var g = vec2<f32>(0.0);
-    for (var i = 0u; i < 5u; i++) {
-        let wv = WAVES[i];
-        let k = 2.0 * PI / wv.len;
-        let d = rotate(wind, wv.angle);
-        let phase = k * dot(d, p) - sqrt(GRAVITY * k) * time();
-        let fade = select(1.0, far, i >= DISPLACED);
-        g += d * (wv.amp * s * k * cos(phase) * fade);
-    }
-    return g;
+    let cw = cascade_weights() * s;
+    let d = textureSampleLevel(ocean_disp, ocean_samp, p / LENGTHS.x, 0, 0.0) * cw.x
+        + textureSampleLevel(ocean_disp, ocean_samp, p / LENGTHS.y, 1, 1.0) * cw.y;
+    return vec3<f32>(d.x * CHOP, d.y, d.z * CHOP);
 }
 
 @vertex
@@ -177,17 +144,15 @@ fn vertex(in: Vertex) -> WaterVsOut {
         s *= w.lane.z;
     }
     out.rest = rest.xyz;
-    out.world_position = vec4<f32>(rest.xyz + swell_offset(rest.xz, s), 1.0);
+    var off = vec3<f32>(0.0);
+    if s > 0.0 {
+        off = swell_offset(rest.xz, s);
+    }
+    out.world_position = vec4<f32>(rest.xyz + off, 1.0);
     out.clip_position = position_world_to_clip(out.world_position.xyz);
     out.uv = in.uv;
     out.depth = vec2<f32>(v, s);
     return out;
-}
-
-// The ripple map's slope at `uv` (tiles), weighted.
-fn ripple_slope(uv: vec2<f32>, weight: f32) -> vec2<f32> {
-    let t = textureSampleBias(ripple, ripple_samp, uv, view.mip_bias);
-    return (t.rg * 2.0 - 1.0) * SLOPE_RANGE * weight;
 }
 
 // The sky dome's colour along unit `dir`, from the zone's stops; below the horizon, the horizon.
@@ -309,21 +274,32 @@ fn fragment(in: WaterVsOut) -> @location(0) vec4<f32> {
     let v = to_eye_v / max(eye_dist, 1e-4);
     let ocean = w.lane.x > 0.5;
 
-    // ---- The normal: the swell's slope plus three ripple layers, scrolling across each other.
-    let wind = wind_dir();
+    // ---- The normal: the FFT ocean's three cascades, with the choppy displacement's stretch.
+    let wind = WIND;
     let t = time();
     let p = in.rest.xz;
     let far = 1.0 - smoothstep(60.0, 220.0, eye_dist);
-    var slope = swell_slope(p, in.depth.y, far);
-    let calm = select(0.75, 1.0, ocean);
-    slope += ripple_slope(p / 23.0 + wind * (t * 0.020), 0.26 * calm);
-    slope += ripple_slope(rotate(p, 0.9) / 8.3 + rotate(wind, 0.7) * (t * 0.045), 0.10 * calm);
-    slope += ripple_slope(rotate(p, -0.6) / 2.9 + rotate(wind, -0.9) * (t * 0.11), 0.05 * far);
-    // Distance smooths the surface toward a mirror, as the ripples fall below a pixel.
-    slope *= mix(0.45, 1.0, far);
+    // Near the shore the swell fades (`in.depth.y`), but the chop keeps the surface alive.
+    let cw = cascade_weights() * mix(0.35, 1.0, in.depth.y) * vec3<f32>(1.0, 1.0, mix(0.4, 1.0, far));
+    let lens = LENGTHS;
+    var g = vec4<f32>(0.0);
+    var dxz = 0.0;
+    for (var c = 0; c < 3; c++) {
+        let uv = p / lens[c];
+        g += textureSampleBias(ocean_slope, ocean_samp, uv, c, view.mip_bias) * cw[c];
+        dxz += textureSampleBias(ocean_disp, ocean_samp, uv, c, view.mip_bias).w * cw[c];
+    }
+    let jx = 1.0 + CHOP * g.z;
+    let jz = 1.0 + CHOP * g.w;
+    var slope = vec2<f32>(g.x / max(jx, 0.2), g.y / max(jz, 0.2));
+    // Distance smooths the surface toward a mirror, as the waves fall below a pixel.
+    slope *= mix(0.5, 1.0, far);
     var n = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
-    // Sampled here, in uniform control flow (implicit derivatives), for the shore foam below.
+    // The Jacobian: below 1 the surface folds together, where the crests break.
+    let jacobian = jx * jz - CHOP * CHOP * dxz * dxz;
+    // Sampled here, in uniform control flow (implicit derivatives), for the foam below.
     let foam_noise = textureSampleBias(ripple, ripple_samp, p / 4.3 + wind * (t * 0.03), view.mip_bias).b;
+    let crest_noise = textureSampleBias(ripple, ripple_samp, rotate(p, 0.7) / 9.0 - wind * (t * 0.05), view.mip_bias).b;
 
     // From below, the surface faces down. Decided by the eye's height alone: the engine calls
     // the eye submerged (`sh.state.y`) as soon as the near plane's lowest corner dips, while the
@@ -459,9 +435,13 @@ fn fragment(in: WaterVsOut) -> @location(0) vec4<f32> {
         glint += vec3<f32>(0.75, 0.85, 1.0) * spec * fresnel(max(dot(v, h), 0.0)) * 4.0 * sh.moon.w;
     }
 
-    // ---- Shore foam: thin water over a bottom close below, broken by the ripple map.
-    let foam = (1.0 - smoothstep(0.0, 0.7, vertical)) * smoothstep(0.42, 0.7, foam_noise)
+    // ---- Foam: thin water over a bottom close below, and the breaking crests where the surface
+    // folds, both broken up by the ripple map.
+    let shore_foam = (1.0 - smoothstep(0.0, 0.7, vertical)) * smoothstep(0.42, 0.7, foam_noise)
         * select(0.0, 0.55, copy_ok);
+    let crest_foam = smoothstep(0.85, 0.35, jacobian) * smoothstep(0.25, 0.65, crest_noise)
+        * select(0.0, 0.8, w.lane.z > 0.0) * far;
+    let foam = max(shore_foam, crest_foam);
 
     // ---- The blend: emitted (reflection, in-scatter, glint, foam) and transmitted (refraction).
     let emitted = f * refl + (1.0 - f) * scatter * body + glint + foam * lit;

@@ -26,6 +26,7 @@ mod haze;
 mod hooks;
 mod mist;
 mod moonlight;
+mod ocean;
 mod post;
 pub mod prefs;
 mod rays;
@@ -134,6 +135,7 @@ impl Plugin for GfxPlugin {
             .add_plugins(wetness::WetnessPlugin)
             .add_plugins(firelight::FirelightPlugin)
             .add_plugins(taa::TaaPlugin)
+            .add_plugins(ocean::OceanPlugin)
             .add_plugins(water::WaterPlugin);
         #[cfg(feature = "dlss")]
         app.add_plugins((dlss::FramePlugin, dlss::SrPlugin, dlss::FgPlugin))

@@ -17,24 +17,34 @@
 //!   attachment, so MSAA keeps working. The shader reads this copy for refraction, Beer–Lambert
 //!   absorption over the true water column, screen-space reflection, caustics on the bottom, shore
 //!   foam, and a soft edge where the surface meets geometry.
-//! - **Waves.** [`GraphicsPrefs::waves`]: Gerstner swell on ADT ocean and lake. The vertex stage
-//!   displaces by the long waves. The per-pixel normal adds the short waves and three scrolling
-//!   layers of a procedural, tileable ripple map ([`ripple_image`]); nothing from the install is
-//!   used. The swell follows redux's wind when that effect is on, and fades to nothing at the
-//!   shore (the authored depth `V` is 0 there).
+//! - **Waves.** [`GraphicsPrefs::waves`]: the FFT ocean ([`super::ocean`]) on ADT ocean and lake,
+//!   full on the ocean and a fraction on lakes and rivers. The vertex stage displaces by the two
+//!   long cascades, on an ocean mesh subdivided three ways per edge ([`subdivide`]) so the swell
+//!   has the vertices to move; the per-pixel normal takes all three cascades, and the slopes'
+//!   Jacobian marks the breaking crests with foam. One fixed prevailing wind: nothing follows
+//!   redux's live wind, whose every turn would re-phase the whole sea. The waves fade to nothing
+//!   at the shore (the authored depth `V` is 0 there). The procedural ripple map
+//!   ([`ripple_image`]) still breaks up the shore foam and lights the caustics; nothing from the
+//!   install is used.
 //! - **Colour.** The zone's own `Light.dbc` water bands, which also tint the stock water: the deep
 //!   band is the water's body, the shallow band tints the refraction. Both are lit by the stock
 //!   ambient and diffuse, so night water darkens with the zone.
 //! - **From below.** With the camera under the surface, the water shows Snell's window onto the
 //!   world above and total internal reflection outside it, under the engine's own underwater fog.
+use super::ocean::{OceanClock, OceanImages};
 use super::Enhanced;
 use benilla_assets::materials::LiquidMaterial;
 use benilla_world::{lighting::WowLighting, liquid::SubmergedEye, view::WorldCamera};
 use bevy::{
     asset::RenderAssetUsages,
+    camera::{
+        primitives::{Aabb, MeshAabb},
+        visibility::NoAutoAabb,
+    },
     core_pipeline::{core_3d::graph::Core3d, core_3d::graph::Node3d, FullscreenShader},
     ecs::query::QueryItem,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    mesh::{Indices, VertexAttributeValues},
     pbr::{
         ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
         MaterialPlugin,
@@ -65,8 +75,14 @@ const WATER_BIAS: f32 = -2.0e4;
 const COPY_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 /// The ripple map's side, texels.
 const RIPPLE_SIZE: u32 = 256;
-/// The ripple map's slope range, `water.wgsl`'s `SLOPE_RANGE`.
+/// The ripple map's slope range: rg = 0..1 covers ±`SLOPE_RANGE`.
 const SLOPE_RANGE: f32 = 2.0;
+/// The ocean mesh's subdivision, splits per edge: an MCLQ vertex is 4.2 yd from the next, so the
+/// swell gets a vertex every 1.4 yd.
+const OCEAN_SPLITS: u32 = 3;
+/// Head room added to a displaced surface's bounds, yd: the swell's crests rise past the flat
+/// mesh's box, and the frustum cull would drop a chunk whose crest is still on screen.
+const WAVE_ROOM: f32 = 4.0;
 
 /// The water surfaces' material: the stock liquid's slot and blend, this module's shader.
 pub type WaterMaterial = ExtendedMaterial<StandardMaterial, WaterExt>;
@@ -90,6 +106,13 @@ pub struct WaterExt {
     /// The frame's shared inputs ([`WaterShared`]), rewritten in place every frame.
     #[storage(107, read_only, buffer, visibility(vertex, fragment))]
     pub shared: Buffer,
+    /// The FFT ocean's displacement, by cascade ([`OceanImages`]).
+    #[texture(108, dimension = "2d_array")]
+    #[sampler(109)]
+    pub disp: Handle<Image>,
+    /// The FFT ocean's slopes, by cascade, sampled with the displacement's sampler.
+    #[texture(110, dimension = "2d_array")]
+    pub slope: Handle<Image>,
 }
 
 /// `water.wgsl`'s `WaterParams`: the lane's own row, which changes only with the switches.
@@ -142,9 +165,13 @@ impl MaterialExtension for WaterExt {
     }
 }
 
-/// A surface moved off its stock material, which it gets back when the water goes off.
+/// A surface moved off its stock material, and its stock mesh when the ocean subdivided it, which
+/// it gets back when the water goes off.
 #[derive(Component)]
-struct Swapped(Handle<LiquidMaterial>);
+struct Swapped {
+    material: Handle<LiquidMaterial>,
+    mesh: Option<Handle<Mesh>>,
+}
 
 /// The lane a water material serves: ocean or not, ADT or WMO exterior.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -320,7 +347,7 @@ fn size_scene(
 type NewStock = (Without<Swapped>, Added<MeshMaterial3d<LiquidMaterial>>);
 
 /// Moves the water surfaces onto [`WaterMaterial`] while the water is on, and back off.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn swap_materials(
     mut commands: Commands,
     enhanced: Res<Enhanced>,
@@ -330,11 +357,17 @@ fn swap_materials(
     swapped: Query<(Entity, &Swapped)>,
     stock: Res<Assets<LiquidMaterial>>,
     mut ours: ResMut<Assets<WaterMaterial>>,
-    water: Option<ResMut<WaterAssets>>,
-    scene: Option<Res<WaterScene>>,
-    shared: Option<Res<WaterShared>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    surfaces: Query<&Mesh3d>,
+    (water, scene, shared, ocean): (
+        Option<ResMut<WaterAssets>>,
+        Option<Res<WaterScene>>,
+        Option<Res<WaterShared>>,
+        Option<Res<OceanImages>>,
+    ),
 ) {
-    let (Some(mut water), Some(scene), Some(shared)) = (water, scene, shared) else {
+    let (Some(mut water), Some(scene), Some(shared), Some(ocean)) = (water, scene, shared, ocean)
+    else {
         return;
     };
     let on = enhanced.water;
@@ -343,10 +376,13 @@ fn swap_materials(
     if !on {
         if turned {
             for (entity, back) in &swapped {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(back.0.clone()))
+                let mut e = commands.entity(entity);
+                e.insert(MeshMaterial3d(back.material.clone()))
                     .remove::<(MeshMaterial3d<WaterMaterial>, Swapped)>();
+                if let Some(mesh) = &back.mesh {
+                    // The stock mesh back, and Bevy's own bounds for it.
+                    e.insert(Mesh3d(mesh.clone())).remove::<NoAutoAabb>();
+                }
             }
         }
         return;
@@ -389,14 +425,42 @@ fn swap_materials(
                         ripple,
                         light_buf: ext.light_buf.clone(),
                         shared: shared.buffer.clone(),
+                        disp: ocean.disp.clone(),
+                        slope: ocean.slope.clone(),
                     },
                 })
             })
             .clone();
         debug!("redux water: surface {entity} on lane {lane:?}");
+        // The ocean's swell needs vertices: its mesh is subdivided, with room in its bounds.
+        let mut stock_mesh = None;
+        if lane.ocean && !lane.wmo {
+            let finer = surfaces.get(entity).ok().and_then(|m| {
+                let finer = subdivide(meshes.get(&m.0)?, OCEAN_SPLITS)?;
+                Some((m.0.clone(), finer))
+            });
+            if let Some((old, finer)) = finer {
+                let bounds = finer.compute_aabb().map(|mut b: Aabb| {
+                    b.half_extents.y += WAVE_ROOM;
+                    b
+                });
+                let mut e = commands.entity(entity);
+                e.insert((Mesh3d(meshes.add(finer)), NoAutoAabb));
+                if let Some(b) = bounds {
+                    e.insert(b);
+                }
+                stock_mesh = Some(old);
+            }
+        }
         commands
             .entity(entity)
-            .insert((MeshMaterial3d(material), Swapped(handle)))
+            .insert((
+                MeshMaterial3d(material),
+                Swapped {
+                    material: handle,
+                    mesh: stock_mesh,
+                },
+            ))
             .remove::<MeshMaterial3d<LiquidMaterial>>();
     }
 }
@@ -419,6 +483,8 @@ fn lane_params(lane: Lane, enhanced: &Enhanced) -> WaterParams {
 #[allow(clippy::too_many_arguments)]
 fn update_params(
     enhanced: Res<Enhanced>,
+    time: Res<Time>,
+    mut clock: ResMut<OceanClock>,
     lighting: Option<Res<WowLighting>>,
     eye: Option<Res<SubmergedEye>>,
     scene: Option<Res<WaterScene>>,
@@ -427,6 +493,8 @@ fn update_params(
     mut ours: ResMut<Assets<WaterMaterial>>,
     mut last: Local<(UVec2, bool, bool)>,
 ) {
+    let shown = water.as_ref().is_some_and(|w| !w.lanes.is_empty());
+    clock.tick(&time, enhanced.water && enhanced.waves && shown);
     let (Some(scene), Some(water), Some(mut shared)) = (scene, water, shared) else {
         return;
     };
@@ -484,6 +552,136 @@ fn debug_view() -> f32 {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.0)
     })
+}
+
+/// The stock liquid mesh's attributes: position, normal, UV and depth UV.
+struct Verts {
+    pos: Vec<[f32; 3]>,
+    uv0: Vec<[f32; 2]>,
+    uv1: Vec<[f32; 2]>,
+}
+
+impl Verts {
+    /// A new vertex mixing `weights` of existing ones; its index.
+    fn mix(&mut self, weights: &[(u32, f32)]) -> u32 {
+        let at = |i: u32| i as usize;
+        let p: Vec3 = weights
+            .iter()
+            .map(|&(i, f)| Vec3::from(self.pos[at(i)]) * f)
+            .sum();
+        let a: Vec2 = weights
+            .iter()
+            .map(|&(i, f)| Vec2::from(self.uv0[at(i)]) * f)
+            .sum();
+        let b: Vec2 = weights
+            .iter()
+            .map(|&(i, f)| Vec2::from(self.uv1[at(i)]) * f)
+            .sum();
+        self.pos.push(p.to_array());
+        self.uv0.push(a.to_array());
+        self.uv1.push(b.to_array());
+        (self.pos.len() - 1) as u32
+    }
+}
+
+/// `mesh` with every triangle split `n` ways per edge, its attributes interpolated: the stock
+/// liquid's position, normal, UV and depth UV, nothing else (`None` for any other layout). A point
+/// on an edge is computed from the edge's two positions in a fixed order, so the chunk on the far
+/// side of the edge, subdivided alone, puts it at the same bits and the displaced seam stays shut.
+fn subdivide(mesh: &Mesh, n: u32) -> Option<Mesh> {
+    let known = [
+        Mesh::ATTRIBUTE_POSITION.id,
+        Mesh::ATTRIBUTE_NORMAL.id,
+        Mesh::ATTRIBUTE_UV_0.id,
+        Mesh::ATTRIBUTE_UV_1.id,
+    ];
+    if mesh.attributes().any(|(a, _)| !known.contains(&a.id)) {
+        return None;
+    }
+    let (
+        Some(VertexAttributeValues::Float32x3(pos)),
+        Some(VertexAttributeValues::Float32x2(uv0)),
+        Some(VertexAttributeValues::Float32x2(uv1)),
+    ) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_0),
+        mesh.attribute(Mesh::ATTRIBUTE_UV_1),
+    )
+    else {
+        return None;
+    };
+    let indices: Vec<u32> = mesh.indices()?.iter().map(|i| i as u32).collect();
+    let n = n.max(1);
+    let mut v = Verts {
+        pos: pos.clone(),
+        uv0: uv0.clone(),
+        uv1: uv1.clone(),
+    };
+    let order = |i: u32| v_bits(pos, i);
+    let mut edges: HashMap<(u32, u32, u32), u32> = HashMap::default();
+    let mut out = Vec::with_capacity(indices.len() * (n * n) as usize);
+    let side = n + 1;
+    let mut grid = vec![0u32; (side * side) as usize];
+    for &[c0, c1, c2] in indices.as_chunks::<3>().0 {
+        for i in 0..=n {
+            for j in 0..=n - i {
+                // The point k of n along the edge (a, b), keyed from its lower-sorted end.
+                let edge = |a: u32, b: u32, k: u32| {
+                    if order(a) <= order(b) {
+                        (a, b, k)
+                    } else {
+                        (b, a, n - k)
+                    }
+                };
+                let key = match (i, j) {
+                    (0, _) if j == 0 || j == n => None,
+                    (_, 0) if i == n => None,
+                    (_, 0) => Some(edge(c0, c1, i)),
+                    (0, _) => Some(edge(c0, c2, j)),
+                    _ if i + j == n => Some(edge(c1, c2, j)),
+                    _ => None,
+                };
+                let index = match (i, j) {
+                    (0, 0) => c0,
+                    (_, 0) if i == n => c1,
+                    (0, _) if j == n => c2,
+                    _ => match key {
+                        Some((a, b, k)) => *edges.entry((a, b, k)).or_insert_with(|| {
+                            let t = k as f32 / n as f32;
+                            v.mix(&[(a, 1.0 - t), (b, t)])
+                        }),
+                        None => {
+                            let (wb, wc) = (i as f32 / n as f32, j as f32 / n as f32);
+                            v.mix(&[(c0, 1.0 - wb - wc), (c1, wb), (c2, wc)])
+                        }
+                    },
+                };
+                grid[(i * side + j) as usize] = index;
+            }
+        }
+        let g = |i: u32, j: u32| grid[(i * side + j) as usize];
+        for i in 0..n {
+            for j in 0..n - i {
+                out.extend_from_slice(&[g(i, j), g(i + 1, j), g(i, j + 1)]);
+                if i + j + 1 < n {
+                    out.extend_from_slice(&[g(i + 1, j), g(i + 1, j + 1), g(i, j + 1)]);
+                }
+            }
+        }
+    }
+    let count = v.pos.len();
+    let mut finer = Mesh::new(mesh.primitive_topology(), mesh.asset_usage);
+    finer.insert_attribute(Mesh::ATTRIBUTE_POSITION, v.pos);
+    finer.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; count]);
+    finer.insert_attribute(Mesh::ATTRIBUTE_UV_0, v.uv0);
+    finer.insert_attribute(Mesh::ATTRIBUTE_UV_1, v.uv1);
+    finer.insert_indices(Indices::U32(out));
+    Some(finer)
+}
+
+/// A vertex's position as bits, for a fixed order between an edge's two ends.
+fn v_bits(pos: &[[f32; 3]], i: u32) -> [u32; 3] {
+    pos[i as usize].map(f32::to_bits)
 }
 
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
@@ -875,5 +1073,97 @@ fn gfx_hooks_gfx_fog(c: vec3<f32>, span: vec2<f32>, z: f32, p: vec3<f32>, cam: v
         let shared = &src[src.find("struct WaterShared").unwrap()..];
         let shared = &shared[..shared.find("};").unwrap()];
         assert_eq!(shared.matches(": vec4<f32>,").count(), SHARED_ROWS);
+    }
+
+    #[test]
+    fn the_ocean_constants_match_the_shader() {
+        use super::super::ocean::{LENGTHS, WIND};
+        let src = include_str!("water.wgsl");
+        let [a, b, c] = LENGTHS;
+        assert!(src.contains(&format!(
+            "const LENGTHS: vec3<f32> = vec3<f32>({a:.1}, {b:.1}, {c:.1});"
+        )));
+        let [x, z] = WIND;
+        assert!(src.contains(&format!(
+            "const WIND: vec2<f32> = vec2<f32>({x:.1}, {z:.1});"
+        )));
+    }
+
+    /// Two quads sharing an edge, each its own mesh, as two liquid chunks are.
+    fn chunk(x0: f32) -> Mesh {
+        let mut m = Mesh::new(
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        let pos = vec![
+            [x0, 0.0, 0.0],
+            [x0 + 4.2, 0.0, 0.0],
+            [x0, 0.0, 4.2],
+            [x0 + 4.2, 0.0, 4.2],
+        ];
+        m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+        m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; 4]);
+        m.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; 4]);
+        m.insert_attribute(
+            Mesh::ATTRIBUTE_UV_1,
+            vec![[0.0, 0.0], [1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
+        );
+        // Opposite diagonals and orders on the two sides of the shared edge.
+        m.insert_indices(Indices::U32(vec![0, 2, 1, 1, 2, 3]));
+        m
+    }
+
+    fn positions(m: &Mesh) -> Vec<[f32; 3]> {
+        match m.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(p)) => p.clone(),
+            _ => panic!("positions"),
+        }
+    }
+
+    #[test]
+    fn subdivision_keeps_shared_edges_shut_and_winding() {
+        let (left, right) = (chunk(0.0), chunk(4.2));
+        let (fl, fr) = (subdivide(&left, 3).unwrap(), subdivide(&right, 3).unwrap());
+        // 2 triangles × 9, sharing the diagonal's points: 4 corners + 5 edges × 2 + 2 interiors.
+        assert_eq!(fl.indices().unwrap().len(), 2 * 9 * 3);
+        assert_eq!(positions(&fl).len(), 4 + 5 * 2 + 2);
+        // The shared edge x = 4.2 carries the same points, to the bit, from both sides.
+        let on_edge = |p: &[[f32; 3]]| {
+            let mut e: Vec<[u32; 3]> = p
+                .iter()
+                .filter(|v| (v[0] - 4.2).abs() < 1e-4)
+                .map(|v| v.map(f32::to_bits))
+                .collect();
+            e.sort_unstable();
+            e
+        };
+        assert_eq!(on_edge(&positions(&fl)), on_edge(&positions(&fr)));
+        assert_eq!(on_edge(&positions(&fl)).len(), 4);
+        // Every small triangle faces the way its parent did (up, for this winding: −y cross).
+        let p = positions(&fl);
+        for t in fl
+            .indices()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>()
+            .as_chunks::<3>()
+            .0
+        {
+            let (a, b, c) = (
+                Vec3::from(p[t[0]]),
+                Vec3::from(p[t[1]]),
+                Vec3::from(p[t[2]]),
+            );
+            assert!((b - a).cross(c - a).y > 0.0, "{t:?}");
+        }
+        // Depth UV is interpolated: a third of the way along the bottom edge.
+        let Some(VertexAttributeValues::Float32x2(uv1)) = fl.attribute(Mesh::ATTRIBUTE_UV_1) else {
+            panic!("uv1");
+        };
+        assert!(uv1.iter().any(|u| (u[0] - 1.0 / 3.0).abs() < 1e-6));
+        // A layout the stock liquid never has is left alone.
+        let mut coloured = chunk(0.0);
+        coloured.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[1.0; 4]; 4]);
+        assert!(subdivide(&coloured, 3).is_none());
     }
 }
