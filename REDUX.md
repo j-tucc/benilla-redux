@@ -51,6 +51,12 @@ allows redistribution.
   and write screenshots to disk (`python redux/headless/shoot.py`), for agents testing on a
   machine someone is using.
 
+## Features
+
+- **Cursor Size** (`redux/cursor`): the cursor drawn at a chosen size (Default, 32x32 … 128x128)
+  or the display's DPI, set in `redux-cursor.toml`, `REDUX_CURSOR_SIZE`, or by an options addon
+  through the `reduxCursorSize` CVar. See `redux/cursor/README.md`.
+
 ## Patch ledger
 
 Every upstream file redux changes, with the reason. Keep it current: a patch with no row here is
