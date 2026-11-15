@@ -18,6 +18,8 @@
 const FIRE_RADIUS: f32 = 12.0;
 // The falloff's knee (yd): the light is halved this far out, then falls as the inverse square.
 const FIRE_KNEE: f32 = 2.5;
+// A named prop's light fades in over this far (yd), so the prop it sits in keeps its look.
+const NAMED_CORE: f32 = 1.4;
 // How far the light wraps past the terminator, so flat ground beside a low flame still takes it.
 const FIRE_WRAP: f32 = 0.6;
 // The flicker's three tones (Hz, each a whole number of cycles per `firelight::CLOCK_WRAP_S`) and
@@ -33,9 +35,9 @@ fn fire_rgb(word: f32) -> vec3<f32> {
     ) / 255.0;
 }
 
-// The flicker at `clock` for a light whose phase comes from its position: warm lights (flames)
-// flicker, cool ones (magic) hold steady.
-fn fire_flicker(clock: f32, at: vec3<f32>, rgb: vec3<f32>) -> f32 {
+// The flicker's wave at `clock` for a light whose phase comes from its position: its swing
+// about 1, at full depth.
+fn fire_wave(clock: f32, at: vec3<f32>) -> f32 {
     // An integer hash of the light's half-yard cell: exact at any distance from the origin.
     let cell = bitcast<vec3<u32>>(vec3<i32>(floor(at * 2.0)));
     var h = (cell.x * 73856093u) ^ (cell.y * 19349663u) ^ (cell.z * 83492791u);
@@ -43,8 +45,28 @@ fn fire_flicker(clock: f32, at: vec3<f32>, rgb: vec3<f32>) -> f32 {
     h = h ^ (h >> 13u);
     let phase = f32(h & 0xffffu) / 65535.0 * 6.2831853;
     let t = 6.2831853 * FLICKER_HZ * clock + vec3<f32>(phase, phase * 2.3, phase * 0.7);
+    return dot(FLICKER_DEPTH, sin(t));
+}
+
+// The flicker at `clock` for a light whose phase comes from its position: warm lights (flames)
+// flicker, cool ones (magic) hold steady.
+fn fire_flicker(clock: f32, at: vec3<f32>, rgb: vec3<f32>) -> f32 {
     let warm = clamp((rgb.r - rgb.b) / max(rgb.r, 1e-3), 0.0, 1.0);
-    return 1.0 + warm * dot(FLICKER_DEPTH, sin(t));
+    return 1.0 + warm * fire_wave(clock, at);
+}
+
+// How deep a lantern's flicker is beside a flame's: a flame behind glass shimmers.
+const LANTERN_DEPTH: f32 = 0.4;
+
+// The flicker of a light by the kind its word carries in the fourth byte's low bits
+// (`firelight::pack_light`, `locallights::Flicker`): 0 by hue, 1 a flame, 2 a lantern, 3 steady.
+fn fire_flicker_of(clock: f32, at: vec3<f32>, word: f32, rgb: vec3<f32>) -> f32 {
+    let kind = (bitcast<u32>(word) >> 24u) & 3u;
+    if (kind == 0u) {
+        return fire_flicker(clock, at, rgb);
+    }
+    let depth = select(select(0.0, LANTERN_DEPTH, kind == 2u), 1.0, kind == 1u);
+    return 1.0 + depth * fire_wave(clock, at);
 }
 
 // One light's share at `world_pos` facing `n` (`has_n` false when the surface authored none).
@@ -59,7 +81,13 @@ fn fire_one(row: vec4<f32>, world_pos: vec3<f32>, n: vec3<f32>, has_n: bool, clo
     let d = sqrt(d2);
     let edge = d2 / (FIRE_RADIUS * FIRE_RADIUS);
     let window = (1.0 - edge * edge) * (1.0 - edge * edge);
-    let falloff = window / (1.0 + d2 / (FIRE_KNEE * FIRE_KNEE));
+    var falloff = window / (1.0 + d2 / (FIRE_KNEE * FIRE_KNEE));
+    // A light the map's list made from a prop's name (a flicker kind set) sits inside the prop:
+    // its own post, bowl and glass would take the full gain and white out, so it fades in over
+    // the first `NAMED_CORE` yards.
+    if (((bitcast<u32>(row.w) >> 24u) & 3u) != 0u) {
+        falloff *= smoothstep(0.25 * NAMED_CORE, NAMED_CORE, d);
+    }
     // A surface without a normal (some M2s author none) takes the light half-wrapped.
     var facing = 0.5;
     if (has_n) {
@@ -69,7 +97,7 @@ fn fire_one(row: vec4<f32>, world_pos: vec3<f32>, n: vec3<f32>, has_n: bool, clo
     // A carried light's word has its sign set: it moves, so `firelight.rs` put its flicker in the
     // colour on a phase of its own, which the position hash here would scramble.
     let steady = (bitcast<u32>(row.w) & 0x80000000u) != 0u;
-    let flicker = select(fire_flicker(clock, row.xyz, rgb), 1.0, steady);
+    let flicker = select(fire_flicker_of(clock, row.xyz, row.w, rgb), 1.0, steady);
     return rgb * (falloff * facing * flicker);
 }
 
@@ -99,5 +127,9 @@ fn fire_light(world_pos: vec3<f32>, normal: vec3<f32>, gfx: GfxData) -> vec3<f32
     if (count > 9u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 9u], world_pos, n, has_n, clock); }
     if (count > 10u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 10u], world_pos, n, has_n, clock); }
     if (count > 11u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 11u], world_pos, n, has_n, clock); }
+    if (count > 12u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 12u], world_pos, n, has_n, clock); }
+    if (count > 13u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 13u], world_pos, n, has_n, clock); }
+    if (count > 14u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 14u], world_pos, n, has_n, clock); }
+    if (count > 15u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 15u], world_pos, n, has_n, clock); }
     return sum * misc.z;
 }

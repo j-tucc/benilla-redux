@@ -51,6 +51,8 @@ REDUX_TIP_SCATTER = "The air holds the sun's light: the sun glows through haze a
 REDUX_TIP_RAYS = "Long beams fanning from the sun through gaps in trees and between buildings."
 REDUX_TIP_FIRELIGHT = "Campfires, braziers and lanterns cast a warm, flickering light on the "
     .. "ground, walls and people around them."
+REDUX_TIP_GLOW = "The fog glows softly round lamps, braziers and fires, shimmering, and far "
+    .. "lamps show as orbs in the fog. Needs Firelight."
 REDUX_TIP_WATER = "WoW Forever's water: see into the water, coloured and darkened by its depth, "
     .. "with reflections of the sky and shore, sun and moon glints, caustics and shore foam."
 REDUX_TIP_WAVES = "Rolling, breaking ocean swell and a gentle chop on lakes, with Forever Water on."
@@ -273,6 +275,7 @@ local function BuildGraphics(key)
     Check(key, "RowScatter", "gfx_scatter", "Sunlit Air", "REDUX_TIP_SCATTER")
     Check(key, "RowRays", "gfx_rays", "Sun Rays", "REDUX_TIP_RAYS")
     Check(key, "RowFirelight", "gfx_firelight", "Firelight", "REDUX_TIP_FIRELIGHT")
+    Check(key, "RowGlow", "gfx_glow", "Fog Light Glow", "REDUX_TIP_GLOW")
     Check(key, "RowWater", "gfx_water", "Forever Water", "REDUX_TIP_WATER")
     Check(key, "RowWaves", "gfx_waves", "Water Waves", "REDUX_TIP_WAVES", 1)
 

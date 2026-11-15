@@ -55,6 +55,8 @@ pub struct GraphicsPrefs {
     pub rays: bool,
     /// Fires, braziers and lanterns light the ground and walls round them, with a flicker.
     pub firelight: bool,
+    /// The fog glows round the firelight's lights, shimmering, far down a foggy road.
+    pub glow: bool,
     /// WoW Forever's water: refraction, depth colour, reflections, glints, foam (`water.rs`).
     pub water: bool,
     /// Rolling waves on ocean and lake, under [`Self::water`].
@@ -69,7 +71,7 @@ pub struct GraphicsPrefs {
 
 impl GraphicsPrefs {
     /// The file's keys, in its order.
-    pub const KEYS: [&'static str; 19] = [
+    pub const KEYS: [&'static str; 20] = [
         "gfx_wind",
         "gfx_fog",
         "gfx_sky",
@@ -87,6 +89,7 @@ impl GraphicsPrefs {
         "gfx_firelight",
         "gfx_dlss",
         "gfx_fg",
+        "gfx_glow",
         "gfx_water",
         "gfx_waves",
     ];
@@ -107,6 +110,7 @@ impl GraphicsPrefs {
         scatter: true,
         rays: true,
         firelight: true,
+        glow: true,
         water: true,
         waves: true,
         aa: AA_TAA,
@@ -129,6 +133,7 @@ impl GraphicsPrefs {
             "gfx_scatter" => Some(&mut self.scatter),
             "gfx_rays" => Some(&mut self.rays),
             "gfx_firelight" => Some(&mut self.firelight),
+            "gfx_glow" => Some(&mut self.glow),
             "gfx_fg" => Some(&mut self.fg),
             "gfx_water" => Some(&mut self.water),
             "gfx_waves" => Some(&mut self.waves),
@@ -178,7 +183,7 @@ impl GraphicsPrefs {
 
 /// `$REDUX_GFX`: `classic`, `enhanced`, or a comma list of effect names (`wind`, `fog`, `sky`,
 /// `grading`, `bloom`, `shadows`, `moonlight`, `shafts` (Medium) or `shafts_high`, `ssao`, `mist`,
-/// `wetness`, `scatter`, `rays`, `firelight`, `water`, `waves`), one anti-aliasing (`msaa`, `taa`, `dlss`, a DLSS
+/// `wetness`, `scatter`, `rays`, `firelight`, `glow`, `water`, `waves`), one anti-aliasing (`msaa`, `taa`, `dlss`, a DLSS
 /// mode `dlaa`/`dlss_q`/`dlss_b`/`dlss_p`/`dlss_up`, `metalfx`) and `fg`. `None` when unreadable.
 pub fn parse_forced(v: &str) -> Option<GraphicsPrefs> {
     let mut p = GraphicsPrefs::default();

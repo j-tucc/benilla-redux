@@ -12,6 +12,7 @@ workspace = true
 bevy.workspace = true
 benilla-world.workspace = true
 benilla-assets.workspace = true
+benilla-formats.workspace = true
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }
 

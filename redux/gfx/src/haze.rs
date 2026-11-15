@@ -143,6 +143,11 @@ fn update_views(
     // The firelight's nearest lights glow in the air round them (zero count when it is off).
     let fires = &frame.rows[super::rows::FIRES..super::rows::FIRES + HALOS];
     rows[9..].copy_from_slice(fires);
+    // The fog light glow draws the air's glow round the lights inside the world's own shading
+    // (`glow.rs`); this pass's halos, its stand-in over the finished frame, step aside.
+    if enhanced.glow {
+        rows[8][1] = 0.0;
+    }
     let on = enhanced.fog || enhanced.mist || enhanced.scatter || enhanced.firelight;
     for (entity, camera, mut camera3d, old) in &mut cameras {
         if !(on && camera.is_active) {

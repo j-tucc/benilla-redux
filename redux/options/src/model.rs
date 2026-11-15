@@ -147,6 +147,7 @@ fn field(p: &GraphicsPrefs, key: &str) -> Option<u8> {
         "gfx_scatter" => on(p.scatter),
         "gfx_rays" => on(p.rays),
         "gfx_firelight" => on(p.firelight),
+        "gfx_glow" => on(p.glow),
         "gfx_water" => on(p.water),
         "gfx_waves" => on(p.waves),
         "gfx_fg" => on(p.fg),

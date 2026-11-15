@@ -21,4 +21,6 @@ const MOON_B: u32 = 29u;
 const MIST: u32 = 30u;
 const WET: u32 = 31u;
 const FIRES: u32 = 32u;
-const MAX_FIRES: u32 = 12u;
+const MAX_FIRES: u32 = 16u;
+const GLOW_A: u32 = 59u;
+const GLOW_B: u32 = 60u;

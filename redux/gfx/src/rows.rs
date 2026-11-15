@@ -56,11 +56,17 @@ pub const WET: usize = 31;
 /// (`firelight.rs`); the first `MISC.y` are live.
 pub const FIRES: usize = 32;
 /// How many lights the firelight rows hold.
-pub const MAX_FIRES: usize = 12;
+pub const MAX_FIRES: usize = 16;
 /// Rows in use.
 pub const USED: usize = FIRES + MAX_FIRES;
 /// The first row of the previous frame's copy of the vertex hook's rows.
 pub const PREVIOUS: usize = 48;
+
+/// Fog light glow (`glow.rs`): the camera's world xyz (the sky hook has no camera position), the
+/// air's extinction per yard.
+pub const GLOW_A: usize = 59;
+/// Fog light glow: the gain (0 = off), the noise clock (s), the scene fog end (yd), 0.
+pub const GLOW_B: usize = 60;
 
 /// The sky clock's wrap: a day. The sky's oscillators make whole cycles per wrap.
 pub const SKY_CLOCK_WRAP_S: f64 = 86_400.0;
@@ -68,7 +74,8 @@ pub const SKY_CLOCK_WRAP_S: f64 = 86_400.0;
 const _: () = assert!(BENDERS + MAX_BENDERS == SKY);
 const _: () = assert!(CLOCK < SHADOW_CLIP && SHADOW_CLIP + 4 == SHADOW_TEXEL);
 const _: () = assert!(WET + 1 == FIRES && USED <= PREVIOUS);
-const _: () = assert!(PREVIOUS + (SKY - WIND_A) <= benilla_world::lighting::GFX_ROWS);
+const _: () =
+    assert!(PREVIOUS + (SKY - WIND_A) <= GLOW_A && GLOW_B < benilla_world::lighting::GFX_ROWS);
 
 /// Octahedral encoding of a unit vector into `[-1, 1]²` (the shaders' `fog_oct_decode`).
 pub fn oct_encode(v: Vec3) -> [f32; 2] {
@@ -112,6 +119,8 @@ mod tests {
             ("WET", WET),
             ("FIRES", FIRES),
             ("MAX_FIRES", MAX_FIRES),
+            ("GLOW_A", GLOW_A),
+            ("GLOW_B", GLOW_B),
         ] {
             assert!(
                 src.contains(&format!("const {name}: u32 = {row}u;")),

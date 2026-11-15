@@ -64,7 +64,7 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
   - Enhanced effects, each behind a switch, all off by default (Classic draws benilla's image):
     wind, modern fog and haze, sky, grading, bloom, sun shadows with dappled sun, moonlight,
     light shafts, sun rays, sunlit air, ambient occlusion, ground mist, rain wetness,
-    firelight, and Forever water with waves; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
+    firelight, fog light glow, and Forever water with waves; anti-aliasing MSAA, TAA or DLSS. Set them in `benilla-config/redux-gfx.toml`
     (re-read while the client runs): `preset = "enhanced"` turns every effect on with TAA, and
     `gfx_<name> = true/false`, `gfx_shafts = 0|1|2`, `gfx_aa = 0|1|2` (MSAA, TAA, DLSS),
     `gfx_dlss = 0..4` (DLAA to Ultra Performance) and `gfx_fg = true` (Frame Generation) adjust
@@ -84,6 +84,28 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
     `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
     DLSS choice draws as TAA. The boot line `STREAMLINE status=…` says what was found.
+  - Local lights (`locallights.rs`): the map's placed lights as a list of their own, the way a
+    modern client streams lights with the terrain. Each loaded ADT tile's doodads and its
+    buildings' exterior doodads are scanned for light props. Most 1.12 light props (lamp posts,
+    braziers, lanterns, pyres, torches, candles, forges) author no M2 light, so a curated
+    name table decides that a model emits light and how it flickers. The light is placed at the
+    model's flame emitters, or on its bounds; an authored casting M2 light wins where there is
+    one. Name-matched models are read off the archives at once, so lights are listed seconds
+    before their models load, and they are kept for every resident tile, beyond the props' fade
+    distance. Firelight lights from the list and drops the engine's own light where a listed one
+    stands. `REDUX_LOCAL_LIGHTS=0` turns the list off for a session (firelight then uses the
+    engine's lights alone). `REDUX_LIGHTS_PROBE=<seconds>` prints the list's counts every second,
+    and `REDUX_LIGHTS_NAMES=1` adds the named models and the nearest lights.
+  - Fog light glow (`glow.rs`, `glow.wgsl`, `gfx_glow`): the air round the firelight's lights
+    scatters their light, so lamps and braziers glow as soft, shimmering orbs in the fog and a far
+    lamp shows before its model loads. The closed-form single scattering of a point light, summed
+    over the firelight's 16 nearest lights within 250 yd (fading out from 180 yd), with drifting
+    3D-noise density and each light's flicker. It runs inside the world's own fog shading
+    (`gfx_surface`, `gfx_fog`, `gfx_sky`), not as a pass over the finished frame, so it resolves
+    under MSAA and TAA alike and needs no frame history. The air's thickness is the haze plus
+    the zone fog's, so Duskwood glows more than Elwynn. It needs Firelight; while on, the haze
+    pass's flat fire halos are off. `REDUX_GLOW_GAIN=<n>` overrides the night gain for a tuning
+    session.
 - `redux/packs` (`redux-packs`): HD texture packs and HD icons, ported from Elderoth's
   `benilla-adapter`. Nothing is committed: both are read from a local `classic-overrides/` folder
   found beside or above the checkout (or the binary): `texture-packs/<pack>/textures/*.dds` (BC7,
