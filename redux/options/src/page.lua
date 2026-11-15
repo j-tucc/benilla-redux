@@ -53,7 +53,7 @@ REDUX_TIP_FIRELIGHT = "Campfires, braziers and lanterns cast a warm, flickering 
     .. "ground, walls and people around them."
 REDUX_TIP_WATER = "WoW Forever's water: see into the water, coloured and darkened by its depth, "
     .. "with reflections of the sky and shore, sun and moon glints, caustics and shore foam."
-REDUX_TIP_WAVES = "Rolling waves on oceans and lakes, with Forever Water on."
+REDUX_TIP_WAVES = "Rolling, breaking ocean swell and a gentle chop on lakes, with Forever Water on."
 REDUX_TIP_SMOOTH = "Character models are drawn with rounder, smoother surfaces."
 REDUX_TIP_PACK =
     "The HD texture pack the world is drawn with, from classic-overrides\\texture-packs. "
