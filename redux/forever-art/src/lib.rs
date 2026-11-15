@@ -244,6 +244,28 @@ fn member_rank(name: &str) -> u8 {
 }
 
 impl Report {
+    /// Draw each 1x region from its `-2x` sibling's art at the 1x size, as the modern client does
+    /// on a high-resolution screen (benilla draws a UI unit over about two pixels there). A bar
+    /// fill swaps only for a sibling also built as a bar: their textures crop differently.
+    fn prefer_hi_res(&mut self, manifest: &Manifest) {
+        let swaps: Vec<(String, Entry)> = self
+            .atlases
+            .iter()
+            .filter(|(name, _)| !name.ends_with("-2x"))
+            .filter_map(|(name, _)| {
+                let hi = format!("{name}-2x");
+                let e = self.atlases.get(&hi)?;
+                (manifest.is_bar(name) == manifest.is_bar(&hi)).then(|| (name.clone(), e.clone()))
+            })
+            .collect();
+        for (name, hi) in swaps {
+            let e = self.atlases.get_mut(&name).expect("listed above");
+            e.texture = hi.texture;
+            e.right = hi.right;
+            e.bottom = hi.bottom;
+        }
+    }
+
     /// Modern code asks for an element by name (`SetAtlas("UI-HUD-MicroMenu-Questlog-Up")`) and
     /// the client picks one of its members; some elements have only `-2x` members. Each element
     /// whose members were built gets an entry under its own name, from its best member, at its
@@ -369,6 +391,7 @@ pub fn build(
         );
     }
 
+    report.prefer_hi_res(manifest);
     report.add_element_aliases(&built, t);
 
     for file in &manifest.files {
@@ -649,6 +672,36 @@ mod tests {
         // Margins come out in drawn units: half the 2x member's pixels.
         assert_eq!(r.slices["frame"].top, 10.0);
         assert!(lua(&r).contains("BF_SLICES = {\n[\"frame\"] = { 8, 10, 8, 10, 1 },\n}"));
+    }
+
+    #[test]
+    fn regions_draw_from_their_2x_art_at_1x_size() {
+        let mut r = Report::default();
+        let mut hi = entry(92, 90);
+        hi.texture = "hi".into();
+        hi.right = 0.72;
+        r.atlases.insert("frame-c60".into(), entry(46, 45));
+        r.atlases.insert("frame-c60-2x".into(), hi);
+        r.atlases.insert("fill".into(), entry(124, 20));
+        r.atlases.insert("fill-2x".into(), {
+            let mut e = entry(248, 40);
+            e.texture = "padded".into();
+            e
+        });
+        r.atlases.insert("lone".into(), entry(10, 10));
+        let m = Manifest {
+            bars: vec!["fill".into()],
+            ..Manifest::default()
+        };
+        r.prefer_hi_res(&m);
+        let e = &r.atlases["frame-c60"];
+        assert_eq!(
+            (e.texture.as_str(), e.width, e.height, e.right),
+            ("hi", 46, 45, 0.72)
+        );
+        // A bar fill keeps its own art when its 2x sibling is not built as a bar.
+        assert_ne!(r.atlases["fill"].texture, "padded");
+        assert_eq!(r.atlases["lone"].width, 10);
     }
 
     #[test]
