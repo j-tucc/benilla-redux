@@ -4,7 +4,7 @@
 // `benilla-assets/src/shaders/gfx_hooks.wgsl` this replaces at `materials::GFX_HOOKS_SHADER`; the
 // import path, constants and signatures must stay the engine's). `hooks.rs` installs it with one
 // shader def per effect that is on, `GFX_FOG`, `GFX_WIND`, `GFX_SKY`,
-// `GFX_SHADOWS`, `GFX_MOONLIGHT`, `GFX_WET` and `GFX_FIRE`; an effect
+// `GFX_SHADOWS`, `GFX_MOONLIGHT`, `GFX_WET`, `GFX_FIRE` and `GFX_GLOW`; an effect
 // that is off compiles to the stock body. Every hook stays a pure function of its arguments.
 
 #import benilla::gfx_data::GfxData
@@ -29,6 +29,9 @@
 #endif
 #ifdef GFX_FIRE
 #import redux::gfx_fire as fire_fx
+#endif
+#ifdef GFX_GLOW
+#import redux::gfx_glow as glow_fx
 #endif
 
 const GFX_VERTEX_CLUTTER: u32 = 1u;
@@ -55,10 +58,17 @@ fn gfx_fog(
     gfx: GfxData,
 ) -> vec4<f32> {
 #ifdef GFX_FOG
-    return fog_fx::fog_sample(fog_rgb, span, eye_z, world_pos, camera_pos, scene_colour, gfx);
+    var out = fog_fx::fog_sample(fog_rgb, span, eye_z, world_pos, camera_pos, scene_colour, gfx);
 #else
-    return vec4<f32>(fog_rgb, gfx_fog_linear(eye_z, span));
+    var out = vec4<f32>(fog_rgb, gfx_fog_linear(eye_z, span));
 #endif
+#ifdef GFX_GLOW
+    // The lights' glow in the fogged share; `gfx_surface` adds the share the surface keeps.
+    if (scene_colour) {
+        out = vec4<f32>(out.rgb + glow_fx::glow_fog(span, world_pos, camera_pos, gfx), out.w);
+    }
+#endif
+    return out;
 }
 
 fn gfx_vertex_offset(
@@ -87,6 +97,7 @@ fn gfx_sky(
     frag_xy: vec2<f32>,
     gfx: GfxData,
 ) -> vec3<f32> {
+    var out = col;
 #ifdef GFX_SKY
     let fx = array<vec4<f32>, 3>(
         gfx.rows[gfx_rows::SKY], gfx.rows[gfx_rows::SKY + 1u], gfx.rows[gfx_rows::SKY + 2u],
@@ -94,18 +105,21 @@ fn gfx_sky(
     let fog = array<vec4<f32>, 3>(
         gfx.rows[gfx_rows::FOG_B], gfx.rows[gfx_rows::FOG_C], gfx.rows[gfx_rows::FOG_D],
     );
-    return sky_fx::shade_sky(elev, dir, stops, fx, fog, gfx.rows[gfx_rows::CLOCK].x, frag_xy);
+    out = sky_fx::shade_sky(elev, dir, stops, fx, fog, gfx.rows[gfx_rows::CLOCK].x, frag_xy);
 #else
 #ifdef GFX_FOG
     // The modern fog's low band on the stock gradient.
-    return fog_fx::fog_sky_horizon(
+    out = fog_fx::fog_sky_horizon(
         col, stops[0], dir,
         gfx.rows[gfx_rows::FOG_B], gfx.rows[gfx_rows::FOG_C], gfx.rows[gfx_rows::FOG_D],
     );
-#else
-    return col;
 #endif
 #endif
+#ifdef GFX_GLOW
+    // A lamp against the sky glows along the whole ray.
+    out += glow_fx::glow_sky(dir, gfx);
+#endif
+    return out;
 }
 
 fn gfx_cloud(
@@ -180,6 +194,11 @@ fn gfx_surface(
 #ifdef GFX_FIRE
     // Firelight lights the albedo, units' bodies included.
     out += albedo * fire_fx::fire_light(world_pos, normal, gfx);
+#endif
+#ifdef GFX_GLOW
+    // The lights' glow in front of the surface, the share the fog lets through (`gfx_fog` adds the
+    // rest).
+    out += glow_fx::glow_at(world_pos, camera_pos, gfx);
 #endif
     return out;
 }

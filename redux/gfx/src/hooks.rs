@@ -24,6 +24,7 @@ impl Plugin for HooksPlugin {
         bevy::shader::load_shader_library!(app, "moon.wgsl");
         bevy::shader::load_shader_library!(app, "wet.wgsl");
         bevy::shader::load_shader_library!(app, "fire.wgsl");
+        bevy::shader::load_shader_library!(app, "glow.wgsl");
         app.add_systems(PostUpdate, install);
     }
 }
@@ -38,6 +39,7 @@ fn defs(p: &GraphicsPrefs) -> Vec<ShaderDefVal> {
         ("GFX_MOONLIGHT", p.moonlight),
         ("GFX_WET", p.wetness),
         ("GFX_FIRE", p.firelight),
+        ("GFX_GLOW", p.firelight && p.glow),
     ]
     .into_iter()
     .filter(|(_, on)| *on)
@@ -57,6 +59,7 @@ const LIBRARIES: &[&str] = &[
     "redux::gfx_moon",
     "redux::gfx_wet",
     "redux::gfx_fire",
+    "redux::gfx_glow",
 ];
 
 fn libraries_loaded(shaders: &Assets<Shader>) -> bool {
@@ -103,7 +106,7 @@ mod tests {
     #[test]
     fn classic_asks_for_no_defs() {
         assert!(defs(&GraphicsPrefs::default()).is_empty());
-        assert_eq!(defs(&GraphicsPrefs::ENHANCED).len(), 7);
+        assert_eq!(defs(&GraphicsPrefs::ENHANCED).len(), 8);
     }
 
     /// Bevy queues a pipeline only once every import its modules name is registered. An import

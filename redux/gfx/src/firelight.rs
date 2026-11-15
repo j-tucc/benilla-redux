@@ -7,7 +7,7 @@
 //! carried torch, a game object's fire, any placed light the list does not hold); an engine light
 //! standing where a listed one does is the same placement's and is dropped. Each frame this picks
 //! the [`MAX_FIRES`] nearest the
-//! camera within [`REACH`] and writes them into the [`FIRES`] rows, which this crate's
+//! camera within [`REACH`] (the fog glow's [`super::glow::REACH`] while it is on) and writes them into the [`FIRES`] rows, which this crate's
 //! `gfx_surface` body (`fire.wgsl`) walks per fragment, skipping every light farther than its
 //! 12 yd radius: the cost is a short loop over what is near. Lights inside buildings (those with
 //! [`LightRooms`]) are left out: interior surfaces never call the hook, and a hall's torches would
@@ -133,17 +133,18 @@ enum Kind {
 /// One picked light: distance², position, hook colour, how it flickers.
 type Fire = (f32, Vec3, Vec3, Kind);
 
-/// The nearest `MAX_FIRES` of `lights` (position, colour, flicker) within [`REACH`] of `eye`,
+/// The nearest `MAX_FIRES` of `lights` (position, colour, flicker) within `reach` of `eye`,
 /// nearest first. No allocation: an insertion into a fixed array.
 fn nearest(
     eye: Vec3,
+    reach: f32,
     lights: impl Iterator<Item = (Vec3, [f32; 3], Kind)>,
 ) -> ([Fire; MAX_FIRES], usize) {
     let mut out = [(0.0, Vec3::ZERO, Vec3::ZERO, Kind::Placed(Flicker::Warm)); MAX_FIRES];
     let mut n = 0;
     for (at, rgb, held) in lights {
         let d2 = at.distance_squared(eye);
-        if d2 >= REACH * REACH {
+        if d2 >= reach * reach {
             continue;
         }
         let colour = fire_colour(rgb);
@@ -206,7 +207,14 @@ fn update_firelight(
                 };
                 Some((at, l.color.map(|c| c * k), kind))
             });
-            let (fires, n) = nearest(eye.translation(), listed.chain(engine));
+            // While the fog glows, lights are picked out to the glow's reach: the surface law
+            // skips every light past its 12 yd radius, so the nearest are lit as before.
+            let reach = if enhanced.glow {
+                super::glow::REACH
+            } else {
+                REACH
+            };
+            let (fires, n) = nearest(eye.translation(), reach, listed.chain(engine));
             for (i, (_, at, colour, kind)) in fires.iter().take(n).enumerate() {
                 let word = match kind {
                     Kind::Placed(flicker) => pack_light(*colour, *flicker),
@@ -251,14 +259,14 @@ mod tests {
                 fire,
                 Kind::Placed(Flicker::Warm),
             )));
-        let (out, n) = nearest(eye, lights);
+        let (out, n) = nearest(eye, REACH, lights);
         assert_eq!(n, MAX_FIRES);
         for (i, (d2, at, ..)) in out.iter().enumerate() {
             assert!((at.x - eye.x - 3.0 * i as f32).abs() < 1e-3, "{i} {at}");
             assert!(*d2 < REACH * REACH);
         }
         let far = (eye + Vec3::X * 61.0, fire, Kind::Placed(Flicker::Warm));
-        let (_, none) = nearest(eye, std::iter::once(far));
+        let (_, none) = nearest(eye, REACH, std::iter::once(far));
         assert_eq!(none, 0);
     }
 

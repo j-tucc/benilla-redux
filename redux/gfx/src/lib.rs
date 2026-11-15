@@ -21,6 +21,7 @@ mod defaults;
 pub mod dlss;
 mod firelight;
 mod fog;
+mod glow;
 mod grading;
 mod haze;
 mod hooks;
@@ -134,6 +135,7 @@ impl Plugin for GfxPlugin {
             .add_plugins(wetness::WetnessPlugin)
             .add_plugins(locallights::LocalLightsPlugin)
             .add_plugins(firelight::FirelightPlugin)
+            .add_plugins(glow::GlowPlugin)
             .add_plugins(taa::TaaPlugin);
         #[cfg(feature = "dlss")]
         app.add_plugins((dlss::FramePlugin, dlss::SrPlugin, dlss::FgPlugin))

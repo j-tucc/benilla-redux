@@ -127,5 +127,9 @@ fn fire_light(world_pos: vec3<f32>, normal: vec3<f32>, gfx: GfxData) -> vec3<f32
     if (count > 9u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 9u], world_pos, n, has_n, clock); }
     if (count > 10u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 10u], world_pos, n, has_n, clock); }
     if (count > 11u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 11u], world_pos, n, has_n, clock); }
+    if (count > 12u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 12u], world_pos, n, has_n, clock); }
+    if (count > 13u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 13u], world_pos, n, has_n, clock); }
+    if (count > 14u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 14u], world_pos, n, has_n, clock); }
+    if (count > 15u) { sum += fire_one(gfx.rows[gfx_rows::FIRES + 15u], world_pos, n, has_n, clock); }
     return sum * misc.z;
 }

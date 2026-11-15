@@ -51,6 +51,8 @@ REDUX_TIP_SCATTER = "The air holds the sun's light: the sun glows through haze a
 REDUX_TIP_RAYS = "Long beams fanning from the sun through gaps in trees and between buildings."
 REDUX_TIP_FIRELIGHT = "Campfires, braziers and lanterns cast a warm, flickering light on the "
     .. "ground, walls and people around them."
+REDUX_TIP_GLOW = "The fog glows softly round lamps, braziers and fires, shimmering, and far "
+    .. "lamps show as orbs in the fog. Needs Firelight."
 REDUX_TIP_SMOOTH = "Character models are drawn with rounder, smoother surfaces."
 REDUX_TIP_PACK =
     "The HD texture pack the world is drawn with, from classic-overrides\\texture-packs. "
@@ -270,6 +272,7 @@ local function BuildGraphics(key)
     Check(key, "RowScatter", "gfx_scatter", "Sunlit Air", "REDUX_TIP_SCATTER")
     Check(key, "RowRays", "gfx_rays", "Sun Rays", "REDUX_TIP_RAYS")
     Check(key, "RowFirelight", "gfx_firelight", "Firelight", "REDUX_TIP_FIRELIGHT")
+    Check(key, "RowGlow", "gfx_glow", "Fog Light Glow", "REDUX_TIP_GLOW")
 
     Header(key, "HeadModels", "Models")
     Check(key, "RowSmooth", "smooth_characters", "Smooth Characters", "REDUX_TIP_SMOOTH")
