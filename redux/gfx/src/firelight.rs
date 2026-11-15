@@ -2,8 +2,11 @@
 //! warm falloff and a gentle flicker, on top of the engine's per-vertex point lights (which light
 //! a vertex from its unit's three nearest, too coarse to pool light on the ground).
 //!
-//! The lights are the engine's own: every outdoor [`WorldPointLight`] (an M2's light, a carried
-//! torch), the same set its point table packs. Each frame this picks the [`MAX_FIRES`] nearest the
+//! The lights are the map's placed lights ([`LocalLights`], derived from each tile's placements
+//! whether or not their models have loaded) and the engine's own outdoor [`WorldPointLight`]s (a
+//! carried torch, a game object's fire, any placed light the list does not hold); an engine light
+//! standing where a listed one does is the same placement's and is dropped. Each frame this picks
+//! the [`MAX_FIRES`] nearest the
 //! camera within [`REACH`] and writes them into the [`FIRES`] rows, which this crate's
 //! `gfx_surface` body (`fire.wgsl`) walks per fragment, skipping every light farther than its
 //! 12 yd radius: the cost is a short loop over what is near. Lights inside buildings (those with
@@ -18,10 +21,15 @@
 //! here, on a phase keyed to its entity, and its colour word is marked steady. A game object's
 //! fire, a child of its object but not of a unit, is lit as a placed one.
 //!
+//! A listed light's model name says how it flickers ([`Flicker`]): a flame, a lantern's gentler
+//! shimmer, or steady; an engine light flickers by hue, warm lights as flames.
+//!
 //! The rows: `FIRES + i` = (world xyz, the colour as three unorm8 channels in one word whose
-//! fourth byte keeps it a normal float, its sign set when the flicker is already in the colour);
+//! fourth byte keeps it a normal float and carries the flicker kind in its low two bits, its sign
+//! set when the flicker is already in the colour);
 //! `MISC` y = the count, z = the gain, w = the flicker clock. Off, the count is zero and the hook
 //! adds nothing.
+use super::locallights::{Flicker, LocalLights};
 use super::rows::{FIRES, MAX_FIRES, MISC};
 use super::Enhanced;
 use benilla_world::lighting::{GfxData, LightRooms, WorldPointLight, WowLighting};
@@ -73,8 +81,15 @@ impl Plugin for FirelightPlugin {
 /// A colour 0..1 as three unorm8 channels, the fourth byte fixed at 0x40 so the word reads as a
 /// normal float (as `wetness.rs` packs its colours).
 fn pack_rgb(c: Vec3) -> f32 {
+    pack_light(c, Flicker::Warm)
+}
+
+/// [`pack_rgb`] with the flicker kind in the fourth byte's low two bits: the exponent stays
+/// between 0x80 and 0x87, a normal float.
+fn pack_light(c: Vec3, flicker: Flicker) -> f32 {
     let b = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u32;
-    f32::from_bits(b(c.x) | (b(c.y) << 8) | (b(c.z) << 16) | (0x40 << 24))
+    let kind = flicker as u32 & 3;
+    f32::from_bits(b(c.x) | (b(c.y) << 8) | (b(c.z) << 16) | ((0x40 | kind) << 24))
 }
 
 /// A held light's flicker at `clock` (s), `fire.wgsl`'s law on a phase from `key` (its entity),
@@ -108,16 +123,23 @@ fn gain(sun_y: f32) -> f32 {
     GAIN_NIGHT * (1.0 - (1.0 - DAY_SHARE) * day)
 }
 
-/// One picked light: distance², position, hook colour, and a held light's flicker key.
-type Fire = (f32, Vec3, Vec3, Option<u32>);
+/// How a picked light flickers: on the shader's law by kind, or here, on a held light's key.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Kind {
+    Placed(Flicker),
+    Held(u32),
+}
 
-/// The nearest `MAX_FIRES` of `lights` (position, colour, a held light's flicker key) within
-/// [`REACH`] of `eye`, nearest first. No allocation: an insertion into a fixed array.
+/// One picked light: distance², position, hook colour, how it flickers.
+type Fire = (f32, Vec3, Vec3, Kind);
+
+/// The nearest `MAX_FIRES` of `lights` (position, colour, flicker) within [`REACH`] of `eye`,
+/// nearest first. No allocation: an insertion into a fixed array.
 fn nearest(
     eye: Vec3,
-    lights: impl Iterator<Item = (Vec3, [f32; 3], Option<u32>)>,
+    lights: impl Iterator<Item = (Vec3, [f32; 3], Kind)>,
 ) -> ([Fire; MAX_FIRES], usize) {
-    let mut out = [(0.0, Vec3::ZERO, Vec3::ZERO, None); MAX_FIRES];
+    let mut out = [(0.0, Vec3::ZERO, Vec3::ZERO, Kind::Placed(Flicker::Warm)); MAX_FIRES];
     let mut n = 0;
     for (at, rgb, held) in lights {
         let d2 = at.distance_squared(eye);
@@ -154,6 +176,7 @@ fn update_firelight(
         Without<LightRooms>,
     >,
     attached: Query<(), With<ParentModel>>,
+    local: Option<Res<LocalLights>>,
     mut frame: ResMut<GfxData>,
     mut clock: Local<f64>,
 ) {
@@ -164,20 +187,30 @@ fn update_firelight(
         if let Ok(eye) = camera.single() {
             // The engine's packer divides by 4π to undo the `PointLight` convention.
             let s = 1.0 / (4.0 * std::f32::consts::PI);
-            let (fires, n) = nearest(
-                eye.translation(),
-                lights.iter().map(|(e, l, t, parent)| {
-                    let k = l.intensity * s;
-                    let held = parent
-                        .is_some_and(|p| attached.contains(p.parent()))
-                        .then_some(e.index_u32());
-                    (t.translation(), l.color.map(|c| c * k), held)
-                }),
-            );
-            for (i, (_, at, colour, held)) in fires.iter().take(n).enumerate() {
-                let word = match held {
-                    None => pack_rgb(*colour),
-                    Some(key) => {
+            let local = local.as_deref();
+            let listed = local
+                .into_iter()
+                .flat_map(LocalLights::lights)
+                .map(|l| (l.at, l.colour, Kind::Placed(l.flicker)));
+            let engine = lights.iter().filter_map(|(e, l, t, parent)| {
+                let k = l.intensity * s;
+                let at = t.translation();
+                let held = parent.is_some_and(|p| attached.contains(p.parent()));
+                if !held && local.is_some_and(|list| list.covers(at)) {
+                    return None; // the listed light is this placement's
+                }
+                let kind = if held {
+                    Kind::Held(e.index_u32())
+                } else {
+                    Kind::Placed(Flicker::Warm)
+                };
+                Some((at, l.color.map(|c| c * k), kind))
+            });
+            let (fires, n) = nearest(eye.translation(), listed.chain(engine));
+            for (i, (_, at, colour, kind)) in fires.iter().take(n).enumerate() {
+                let word = match kind {
+                    Kind::Placed(flicker) => pack_light(*colour, *flicker),
+                    Kind::Held(key) => {
                         let f = held_flicker(*clock as f32, *key, *colour);
                         let rgb = pack_rgb(*colour * (HELD_SHARE * f));
                         f32::from_bits(rgb.to_bits() | STEADY_BIT)
@@ -205,16 +238,27 @@ mod tests {
         let eye = Vec3::new(185.0, 88.0, 8761.0);
         let fire = [0.71, 0.2, 0.0];
         let lights = (0..20)
-            .map(|i| (eye + Vec3::new(3.0 * i as f32, 0.0, 0.0), fire, None))
+            .map(|i| {
+                (
+                    eye + Vec3::new(3.0 * i as f32, 0.0, 0.0),
+                    fire,
+                    Kind::Placed(Flicker::Warm),
+                )
+            })
             .rev()
-            .chain(std::iter::once((eye + Vec3::X * 500.0, fire, None)));
+            .chain(std::iter::once((
+                eye + Vec3::X * 500.0,
+                fire,
+                Kind::Placed(Flicker::Warm),
+            )));
         let (out, n) = nearest(eye, lights);
         assert_eq!(n, MAX_FIRES);
         for (i, (d2, at, ..)) in out.iter().enumerate() {
             assert!((at.x - eye.x - 3.0 * i as f32).abs() < 1e-3, "{i} {at}");
             assert!(*d2 < REACH * REACH);
         }
-        let (_, none) = nearest(eye, std::iter::once((eye + Vec3::X * 61.0, fire, None)));
+        let far = (eye + Vec3::X * 61.0, fire, Kind::Placed(Flicker::Warm));
+        let (_, none) = nearest(eye, std::iter::once(far));
         assert_eq!(none, 0);
     }
 
@@ -274,6 +318,28 @@ mod tests {
             src.contains("0x80000000u"),
             "the shader reads the steady bit"
         );
+    }
+
+    /// The flicker kind rides the fourth byte's low bits and leaves the word a normal float, the
+    /// colour channels intact; `fire.wgsl` reads the same bits.
+    #[test]
+    fn the_flicker_kind_packs_beside_the_colour() {
+        let c = fire_colour([0.71, 0.2, 0.0]);
+        for (flicker, kind) in [
+            (Flicker::Warm, 0),
+            (Flicker::Flame, 1),
+            (Flicker::Lantern, 2),
+            (Flicker::Steady, 3),
+        ] {
+            let word = pack_light(Vec3::ONE, flicker);
+            assert!(word.is_normal() && word > 0.0, "{flicker:?}");
+            assert_eq!((word.to_bits() >> 24) & 3, kind);
+            let w = pack_light(c, flicker).to_bits();
+            assert_eq!(w & 0xff_ffff, pack_rgb(c).to_bits() & 0xff_ffff);
+        }
+        assert_eq!(pack_rgb(c), pack_light(c, Flicker::Warm));
+        let src = include_str!("fire.wgsl");
+        assert!(src.contains("(bitcast<u32>(word) >> 24u) & 3u"));
     }
 
     /// `fire.wgsl` reads each light at a constant row (no loop over the by-value rows): one call

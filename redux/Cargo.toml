@@ -21,6 +21,7 @@ too_many_arguments = "allow"
 benilla-app = { path = "../crates/benilla-app", default-features = false }
 benilla-world = { path = "../crates/benilla-world" }
 benilla-assets = { path = "../crates/benilla-assets" }
+benilla-formats = { path = "../crates/benilla-formats", default-features = false }
 benilla-buildstamp = { path = "../crates/benilla-buildstamp" }
 # benilla's bevy, adding no features (its defaults bring the audio stack back).
 bevy = { version = "0.18.1", default-features = false, features = [

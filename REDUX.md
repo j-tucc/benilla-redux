@@ -74,6 +74,18 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     and NVIDIA's Streamline SDK extracted to `redux/overrides/streamline/<tag>/` (or
     `overrides/streamline/` beside the binary, or `REDUX_STREAMLINE=<folder>`). Without it a
     DLSS choice draws as TAA. The boot line `STREAMLINE status=…` says what was found.
+  - Local lights (`locallights.rs`): the map's placed lights as a list of their own, the way a
+    modern client streams lights with the terrain. Each loaded ADT tile's doodads and its
+    buildings' exterior doodads are scanned for light props. Most 1.12 light props (lamp posts,
+    braziers, lanterns, pyres, torches, candles, forges) author no M2 light, so a curated
+    name table decides that a model emits light and how it flickers. The light is placed at the
+    model's flame emitters, or on its bounds; an authored casting M2 light wins where there is
+    one. Name-matched models are read off the archives at once, so lights are listed seconds
+    before their models load, and they are kept for every resident tile, beyond the props' fade
+    distance. Firelight lights from the list and drops the engine's own light where a listed one
+    stands. `REDUX_LOCAL_LIGHTS=0` turns the list off for a session (firelight then uses the
+    engine's lights alone). `REDUX_LIGHTS_PROBE=<seconds>` prints the list's counts every second,
+    and `REDUX_LIGHTS_NAMES=1` adds the named models and the nearest lights.
 - `redux/packs` (`redux-packs`): HD texture packs and HD icons, ported from Elderoth's
   `benilla-adapter`. Nothing is committed: both are read from a local `classic-overrides/` folder
   found beside or above the checkout (or the binary): `texture-packs/<pack>/textures/*.dds` (BC7,

@@ -5594,6 +5594,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "benilla-assets",
+ "benilla-formats",
  "benilla-world",
  "bevy",
  "libloading",

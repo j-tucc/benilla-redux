@@ -120,7 +120,7 @@ fn fire_halos(ray: vec3<f32>, d: f32) -> vec3<f32> {
         let seen = (atan((min(d, 1.0e4) - t0) / h) + atan(t0 / h)) / h;
         let spread = exp(-h2 / (HALO_SPREAD * HALO_SPREAD));
         let rgb = gfx_fire::fire_rgb(fire.w);
-        sum += rgb * (seen * spread * gfx_fire::fire_flicker(haze.fire_misc.w, fire.xyz, rgb));
+        sum += rgb * (seen * spread * gfx_fire::fire_flicker_of(haze.fire_misc.w, fire.xyz, fire.w, rgb));
     }
     return sum * (HALO_GAIN * haze.fire_misc.z);
 }
