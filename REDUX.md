@@ -45,6 +45,12 @@ and are never committed to this repository, which is public. Third-party SDKs wi
 licences (for example the Streamline/DLSS SDK) are also local and gitignored unless their licence
 allows redistribution.
 
+## Tools
+
+- [`redux/headless/README.md`](redux/headless/README.md): run the client with no visible window
+  and write screenshots to disk (`python redux/headless/shoot.py`), for agents testing on a
+  machine someone is using.
+
 ## Patch ledger
 
 Every upstream file redux changes, with the reason. Keep it current: a patch with no row here is
