@@ -5,6 +5,7 @@
 // and must stay in sync: naga_oil cannot import functions that use another module's bindings.
 
 #import bevy_render::view::View
+#import benilla::{gfx_data, gfx_hooks}
 
 @group(0) @binding(0) var<uniform> view: View;
 
@@ -29,6 +30,8 @@ struct WowLight {
     wmo_fog_params: vec4<f32>,
     point_count: vec4<f32>,
     points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
     // lighting::prop_probes: 8192 slots of 7 rows; the buffer's later regions are not mirrored.
     prop_probes: array<vec4<f32>, 57344>,
 }
@@ -47,6 +50,13 @@ struct GxCell {
 // Repeat and clamp model-albedo samplers: trilinear, aniso 8, the same as the entity path's.
 @group(1) @binding(3) var samp_repeat: sampler;
 @group(1) @binding(4) var samp_clamp: sampler;
+#ifndef GX_DEPTH
+// The world view's directional shadow array and its comparison sampler, for the program's light
+// hook (`gfx_hooks::gfx_lit`); the stock hook reads neither. Not in the depth pipelines, which
+// draw into that array.
+@group(2) @binding(0) var shadow_map: texture_depth_2d_array;
+@group(2) @binding(1) var shadow_cmp: sampler_comparison;
+#endif
 
 // Vertex word bits; keep in sync with static_gx/mod.rs WORD_*.
 const WORD_WRAP_X: u32 = 65536u;    // 1 << 16
@@ -118,6 +128,9 @@ fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>) -> vec4<f32> {
 // clamp as the lit material. Both faces light from the submitted normal (no
 // GL_LIGHT_MODEL_TWO_SIDE in the reference). `vc` is the vertex colour, white where the batch
 // authors none; `point_lit.w` counts the bound point lights.
+// `gfx_hooks::gfx_baked_aside` for the vertex being lit (0 stock), set by `vertex` before it
+// calls `vertex_light`.
+var<private> baked_aside: f32;
 fn vertex_light(normal: vec3<f32>, point_lit: vec4<f32>, vc: vec4<f32>, word: u32) -> vec3<f32> {
     let n_lit = wow_normalize(normal);
     let L = -normalize(wow_light.light_sun.xyz);
@@ -180,8 +193,13 @@ fn vertex_light(normal: vec3<f32>, point_lit: vec4<f32>, vc: vec4<f32>, word: u3
         // ---- exterior ADT doodads and exterior MODD props ----
         // Model2.bls order-2 SH sun lobe at intensity 0.5 Shaded (MCSH), 1.0 Matte, 2.5 Lit,
         // baked unclamped as wow_model.wgsl's (`0x71c4e0`); only the per-vertex sum clamps.
+        // `baked_aside` (`gfx_hooks::gfx_baked_aside`, 0 stock) lifts the shaded band toward the 1.0
+        // band where the program's own shadow stands in for the bake.
         let shade_t = select(1.0, 0.0, (word & WORD_SHADE_LIT) != 0u);
-        let intensity = select(mix(2.5, 0.5, shade_t), 1.0, (word & WORD_MATTE) != 0u);
+        var intensity = select(mix(2.5, 0.5, shade_t), 1.0, (word & WORD_MATTE) != 0u);
+        if (shade_t > 0.5 && (word & WORD_MATTE) == 0u) {
+            intensity = mix(0.5, 1.0, baked_aside);
+        }
         let sun_dc = wow_light.grade.yzw * intensity;
         let sun_lobe = vec3<f32>(
             wow_light.sh_c10_r.w + sun_dc.x
@@ -210,6 +228,22 @@ fn vertex_light(normal: vec3<f32>, point_lit: vec4<f32>, vc: vec4<f32>, word: u3
     return clamp(vc.rgb * e, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// The part of `vertex_light`'s colour no sun ray carries, for the program's light hook: the
+// ambient (the SH lobe's DC lanes, or the FFP ambient) and the point lights, through the same
+// colour and clamp. Exterior lanes only; interior and unlit batches never take the hook.
+fn vertex_unsunned(point_lit: vec4<f32>, vc: vec4<f32>, word: u32) -> vec3<f32> {
+    let amb = wow_light.light_ambient.rgb;
+    if ((word & WORD_WMO) != 0u) {
+        return clamp(vc.rgb * amb, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    let sh_dc = vec3<f32>(wow_light.sh_c10_r.w, wow_light.sh_c10_g.w, wow_light.sh_c10_b.w);
+    var e = select(amb, sh_dc, wow_light.light_sun.w > 0.5) + point_lit.rgb;
+    if (point_lit.w > 0.5) {
+        e = clamp(e, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    return clamp(vc.rgb * e, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 // ---- the pass ----
 
 struct GxVertex {
@@ -230,8 +264,12 @@ struct GxVsOut {
     // The lit colour from `vertex_light`, clamped at the vertex and interpolated.
     @location(4) primary: vec3<f32>,
     @location(5) color: vec4<f32>,
+    // For the program's light hook: the vertex normal and `vertex_unsunned`.
+    @location(6) normal: vec3<f32>,
+    @location(7) unsunned: vec3<f32>,
 }
 
+#ifndef GX_DEPTH
 @vertex
 fn vertex(v: GxVertex) -> GxVsOut {
     var out: GxVsOut;
@@ -244,11 +282,21 @@ fn vertex(v: GxVertex) -> GxVsOut {
         out.word = v.word;
         out.primary = vec3<f32>(0.0);
         out.color = vec4<f32>(1.0);
+        out.normal = vec3<f32>(0.0, 1.0, 0.0);
+        out.unsunned = vec3<f32>(0.0);
         return out;
     }
     // Camera-relative for f32 precision: the recentred vertex plus (cell origin - camera).
-    let p_cam = v.position + (cell.origin.xyz - view.world_position);
-    let world = v.position + cell.origin.xyz;
+    var p_cam = v.position + (cell.origin.xyz - view.world_position);
+    var world = v.position + cell.origin.xyz;
+    // The static vertex hook point, fed the placement anchor and the vertex word (zero in the
+    // stock hook).
+    let moved = gfx_hooks::gfx_vertex_offset(
+        gfx_hooks::GFX_VERTEX_STATIC, world, vec4<f32>(v.anchor, bitcast<f32>(v.word)),
+        view.world_position, wow_light.gfx,
+    );
+    p_cam += moved;
+    world += moved;
     out.world_position = vec4<f32>(world, 1.0);
     let view_rot = mat3x3<f32>(
         view.view_from_world[0].xyz,
@@ -270,7 +318,10 @@ fn vertex(v: GxVertex) -> GxVsOut {
     }
     // A colour-less batch takes a constant 1.0 (WORD_HAS_VC).
     let vc = select(vec4<f32>(1.0), v.color, (v.word & WORD_HAS_VC) != 0u);
+    baked_aside = gfx_hooks::gfx_baked_aside(world, view.world_position, wow_light.gfx);
     out.primary = vertex_light(v.normal, point_lit, vc, v.word);
+    out.normal = v.normal;
+    out.unsunned = vertex_unsunned(point_lit, vc, v.word);
     return out;
 }
 
@@ -325,6 +376,40 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
     // The stage-0 modulate: the texel times the lit colour `vertex_light` clamped per vertex,
     // whose vertex colour is inside its clamp.
     var rgb = base.rgb * in.primary;
+    // The program's light hook on the exterior lanes (stock: the light unchanged).
+    var primary = in.primary;
+    let hooked = (in.word & (WORD_INTERIOR | WORD_UNLIT)) == 0u;
+    var direct = 1.0;
+    if (hooked) {
+        let lit = gfx_hooks::gfx_lit(
+            gfx_hooks::GFX_LIT_STATIC,
+            in.primary,
+            in.unsunned,
+            in.world_position.xyz,
+            in.normal,
+            view.world_position,
+            shadow_map,
+            shadow_cmp,
+            wow_light.gfx,
+        );
+        primary = lit.rgb;
+        direct = lit.w;
+        rgb = base.rgb * primary;
+    }
+    if (hooked) {
+        // The program's surface hook (`gfx_hooks::gfx_surface`, the colour unchanged stock).
+        rgb = gfx_hooks::gfx_surface(
+            gfx_hooks::GFX_LIT_STATIC,
+            rgb,
+            base.rgb,
+            primary,
+            direct,
+            in.world_position.xyz,
+            in.normal,
+            view.world_position,
+            wow_light.gfx,
+        );
+    }
     if ((in.word & WORD_WMO) != 0u && (in.word & WORD_INTERIOR) != 0u) {
         if ((in.word & WORD_CLASS_TRANS) != 0u) {
             // TRANS: the lit pass by MOCV.a (blend 9) under the unlit `tex × MOCV` by 1 − MOCV.a
@@ -354,10 +439,86 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
         fog_span = wow_light.wmo_fog_params.xy;
     }
     if (fog_color.w > 0.5 && (in.word & WORD_FOG_OFF) == 0u) {
-        let denom = max(fog_span.y - fog_span.x, 0.001);
-        let factor = clamp((fog_span.y - eye_z) / denom, 0.0, 1.0);
-        rgb = mix(fog_color.xyz, rgb, factor);
+        // The 1.12 law unless the program replaces the hooks (`gfx_hooks::gfx_fog`).
+        let fog = gfx_hooks::gfx_fog(
+            fog_color.xyz,
+            fog_span,
+            eye_z,
+            in.world_position.xyz,
+            view.world_position,
+            true,
+            wow_light.gfx,
+        );
+        rgb = mix(fog.rgb, rgb, fog.w);
     }
     // Gamma-space output; alpha pinned 1.0, every draw here is opaque.
     return vec4<f32>(rgb, 1.0);
 }
+#endif
+
+#ifdef GX_DEPTH
+// ---- the depth-only casters (an Elderoth engine patch) ----
+// `static_gx/render/shadow.rs` draws the cached regions into each directional shadow view of the
+// world camera with these entry points: the colour pass's placement and kill bit, and the cutout
+// test for alpha-tested items. `GX_UNCLIPPED_EMULATION` writes the unclipped depth by hand where
+// the device lacks depth-clip control.
+
+struct GxDepthOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) word: u32,
+#ifdef GX_UNCLIPPED_EMULATION
+    @location(2) unclipped_depth: f32,
+#endif
+}
+
+@vertex
+fn vertex_depth(v: GxVertex) -> GxDepthOut {
+    var out: GxDepthOut;
+    out.uv = v.uv;
+    out.word = v.word;
+    var p_cam = v.position + (cell.origin.xyz - view.world_position);
+    let world = v.position + cell.origin.xyz;
+    p_cam += gfx_hooks::gfx_vertex_offset(
+        gfx_hooks::GFX_VERTEX_STATIC, world, vec4<f32>(v.anchor, bitcast<f32>(v.word)),
+        view.world_position, wow_light.gfx,
+    );
+    let view_rot = mat3x3<f32>(
+        view.view_from_world[0].xyz,
+        view.view_from_world[1].xyz,
+        view.view_from_world[2].xyz,
+    );
+    out.position = view.clip_from_view * vec4<f32>(view_rot * p_cam, 1.0);
+    if ((recs[v.word & 0xffffu].w & 1u) != 0u) {
+        out.position = vec4<f32>(0.0, 0.0, 2.0, 1.0);
+    }
+#ifdef GX_UNCLIPPED_EMULATION
+    out.unclipped_depth = out.position.z;
+    out.position.z = min(out.position.z, 1.0);
+#endif
+    return out;
+}
+
+fn depth_discard(in: GxDepthOut) {
+#ifdef GX_CUTOUT
+    let layer = i32(recs[in.word & 0xffffu].x);
+    let a = textureSampleBias(tex_array, samp_repeat, in.uv, layer, view.mip_bias).a;
+    if ((in.word & WORD_TEXTURED) != 0u && a < VANILLA_ALPHA_KEY) {
+        discard;
+    }
+#endif
+}
+
+#ifdef GX_UNCLIPPED_EMULATION
+@fragment
+fn fragment_depth(in: GxDepthOut) -> @builtin(frag_depth) f32 {
+    depth_discard(in);
+    return in.unclipped_depth;
+}
+#else
+@fragment
+fn fragment_depth(in: GxDepthOut) {
+    depth_discard(in);
+}
+#endif
+#endif

@@ -1,0 +1,36 @@
+[package]
+name = "benilla-redux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The benilla-redux launcher: benilla's client through benilla_app::run_with, with redux's plugins on top"
+
+[lints]
+workspace = true
+
+[features]
+# The dev/player seam, as benilla's launcher: `--no-default-features` is the player build.
+default = ["dev"]
+dev = ["benilla-app/dev", "redux-packs/reporter"]
+# DLSS through NVIDIA Streamline (redux-gfx's `dlss`); the SDK itself is loaded at run time.
+dlss = ["redux-gfx/dlss"]
+
+[dependencies]
+benilla-app.workspace = true
+benilla-formats = { path = "../../crates/benilla-formats" }
+benilla-world.workspace = true
+redux-gfx = { path = "../gfx" }
+redux-packs = { path = "../packs" }
+redux-smooth = { path = "../smooth" }
+# Hidden-window screenshot runs for agents (`REDUX_HEADLESS=1`, `redux/headless/README.md`); inert otherwise.
+redux-headless = { path = "../headless", default-features = false }
+bevy.workspace = true
+toml = "0.8"
+
+[build-dependencies]
+benilla-buildstamp.workspace = true
+
+[[bin]]
+name = "benilla-redux"
+path = "src/main.rs"
+test = false

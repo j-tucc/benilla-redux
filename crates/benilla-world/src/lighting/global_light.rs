@@ -29,7 +29,8 @@ use crate::view::WorldCamera;
 ///      interior-tagged content in place of 4-5 ·
 ///   20 point_count (x = live entries) · 21+ the point-light table, two rows per light,
 ///      `[pos.xyz, range]` and `[rgb, 0]`, here because Bevy's clusterable buffer is
-///      fragment-only in the view layout and the point term is per vertex.
+///      fragment-only in the view layout and the point term is per vertex ·
+///   then [`super::GfxData`]'s 64 rows: the program's per-frame graphics data, zero by default.
 ///
 /// The GPU buffer is larger: the interior-prop probes and the skin-palette regions follow this
 /// prefix. They stay out of this struct because the extract clones it by value every frame, and
@@ -39,10 +40,15 @@ use crate::view::WorldCamera;
 struct LightStd430 {
     rows: [[f32; 4]; LIGHT_HEADER_ROWS],
     points: [[f32; 4]; 2 * MAX_POINT_LIGHTS],
+    gfx: super::GfxData,
 }
 
 /// Header row count of the layout above (rows 0..=20), which every light blob sizes against.
 pub const LIGHT_HEADER_ROWS: usize = 21;
+
+/// The byte offset of [`super::GfxData`]'s rows in the shared light buffer, for a program that
+/// writes some of its rows from the render world (after the packed light's upload).
+pub const GFX_DATA_OFFSET: u64 = std::mem::offset_of!(LightStd430, gfx) as u64;
 
 /// Packs the model-lighting core from `(ambient, diffuse, sun_dir)` and leaves every other lane
 /// alone: rows 0-2, the SH block (6-11 and 12 `.xyz`, ambient in the DC `.w` lanes) and the sun's
@@ -125,6 +131,7 @@ impl Default for WowLightData {
         Self(LightStd430 {
             rows: [[0.0; 4]; 21],
             points: [[0.0; 4]; 2 * MAX_POINT_LIGHTS],
+            gfx: super::GfxData::default(),
         })
     }
 }
@@ -137,6 +144,7 @@ pub struct SharedLightBuffer(pub Buffer);
 /// Registers the light pack, the probe publish, their extracts and the render-world uploads.
 pub(super) fn register(app: &mut App) {
     app.init_resource::<WowLightData>()
+        .init_resource::<super::GfxData>()
         .init_resource::<super::prop_probes::PropProbeExtract>()
         .add_plugins(ExtractResourcePlugin::<WowLightData>::default())
         .add_plugins(ExtractResourcePlugin::<SharedLightBuffer>::default())
@@ -199,6 +207,7 @@ fn build_light_data(
     // The per-frame portal PVS, for the rooms term.
     portals: Query<&crate::wmo_portal::WmoPortalInstance>,
     mut data: ResMut<WowLightData>,
+    gfx: Res<super::GfxData>,
     time: Res<Time>,
     mut last_dump: Local<f64>,
     mut last_rows_dump: Local<f64>,
@@ -213,6 +222,7 @@ fn build_light_data(
     // clones this 8.5 KB blob every frame it reads as changed.
     let mut fresh = data.0;
     fresh.rows = [[0.0; 4]; LIGHT_HEADER_ROWS];
+    fresh.gfx = *gfx;
     let rows = &mut fresh.rows;
     rows[3] = [l.spec[0], l.spec[1], l.spec[2], 20.0]; // 3 light_spec (w=terrain shininess 20)
     rows[4] = [l.fog_color[0], l.fog_color[1], l.fog_color[2], fog_enable]; // 4 fog_color (w=enable)
@@ -450,6 +460,7 @@ mod tests {
             .init_resource::<crate::dev_state::DebugState>()
             .init_resource::<crate::view::ViewDistance>()
             .init_resource::<WowLightData>()
+            .init_resource::<super::super::GfxData>()
             .init_resource::<Time>()
             .add_systems(Update, build_light_data);
         app.world_mut()

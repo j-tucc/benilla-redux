@@ -342,8 +342,10 @@ fn ensure_ffx_glow(
 
 // ---------------------------------------------------------------- render world
 
+/// The world combine's graph node. Public so a post pass can order itself before the combine's
+/// clamp (on the HDR scene) or after it.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct FfxGlowLabel;
+pub struct FfxGlowLabel;
 
 /// The layouts, samplers, wave LUT and pipelines, built once at startup.
 #[derive(Resource)]
@@ -730,6 +732,11 @@ fn dither_armed() -> f32 {
     }
 }
 
+/// Arms the combine's deband dither (`ffx.lane.w`) at runtime, as `WOW_DITHER=1` does for a
+/// session. Off by default.
+#[derive(Resource, Clone, Copy, Default, Debug, PartialEq, ExtractResource)]
+pub struct FfxDither(pub bool);
+
 /// One view's combine uniform: the zone glow × [`FfxGlow::gain_scale`], the death gate and haze of
 /// its pass pair, the dither arm, then the wave phases, written every frame so the clock runs free.
 /// A pair whose pass is switched off ([`FfxSwitches`]) leaves the scene as it was drawn: no glow,
@@ -971,13 +978,16 @@ fn live_combine(world: &World, glow: &FfxGlow) -> ([f32; 8], bool) {
         world.resource::<FfxHazeMix>().0,
     )
     .switched(switches);
-    let uniform = combine_uniform(
+    let mut uniform = combine_uniform(
         world.resource::<FfxGlowGain>().0,
         player,
         FfxPassState::glue(world.resource::<GlueFfx>().death()).switched(switches),
         glow,
         wave,
     );
+    if world.get_resource::<FfxDither>().is_some_and(|d| d.0) {
+        uniform[3] = 1.0;
+    }
     (uniform, wave_armed(glow.state, wave, player))
 }
 
@@ -1163,6 +1173,7 @@ impl Plugin for FfxGlowPlugin {
             .init_resource::<FfxHazeMix>()
             .init_resource::<FfxWave>()
             .init_resource::<FfxSwitches>()
+            .init_resource::<FfxDither>()
             .add_plugins((
                 ExtractComponentPlugin::<FfxGlow>::default(),
                 ExtractComponentPlugin::<FfxBackdrop>::default(),
@@ -1172,6 +1183,7 @@ impl Plugin for FfxGlowPlugin {
                 ExtractResourcePlugin::<FfxHazeMix>::default(),
                 ExtractResourcePlugin::<FfxWave>::default(),
                 ExtractResourcePlugin::<FfxSwitches>::default(),
+                ExtractResourcePlugin::<FfxDither>::default(),
             ))
             .add_systems(
                 Update,

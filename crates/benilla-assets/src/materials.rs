@@ -22,9 +22,32 @@ use bevy::shader::ShaderRef;
 pub fn register_shaders(app: &mut App) {
     bevy::asset::embedded_asset!(app, "shaders/terrain.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/wow_model.wgsl");
+    bevy::asset::embedded_asset!(app, "shaders/wow_model_depth.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/wdl.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/liquid.wgsl");
+    // The program's graphics hook points (`#import benilla::{gfx_data, gfx_hooks}`), loaded
+    // eagerly so every receiver, in this crate or in benilla-world, resolves them. The hooks
+    // module sits at a fixed handle so a program can replace it ([`GFX_HOOKS_SHADER`]).
+    if app.world().contains_resource::<Assets<Shader>>() {
+        bevy::shader::load_shader_library!(app, "shaders/gfx_data.wgsl");
+        bevy::asset::load_internal_asset!(
+            app,
+            GFX_HOOKS_SHADER,
+            "shaders/gfx_hooks.wgsl",
+            Shader::from_wgsl
+        );
+    }
 }
+
+/// The `benilla::gfx_hooks` module: the stock hook bodies the engine's shaders call. A program
+/// replaces them by inserting its own `Shader` at this handle (same import path and signatures,
+/// its own `shader_defs`); every pipeline importing it then recompiles. Re-inserting
+/// [`GFX_HOOKS_WGSL`] restores the stock image.
+pub const GFX_HOOKS_SHADER: Handle<Shader> =
+    bevy::asset::uuid_handle!("6a1f3c2e-8b4d-4e5f-9a7b-0c1d2e3f4a5b");
+
+/// The stock `benilla::gfx_hooks` source.
+pub const GFX_HOOKS_WGSL: &str = include_str!("shaders/gfx_hooks.wgsl");
 
 /// The WDL far-band shader's source, for the tests that live beside the renderer (`wdl.rs`).
 pub const WDL_WGSL: &str = include_str!("shaders/wdl.wgsl");
@@ -149,6 +172,17 @@ impl MaterialExtension for WowModelExt {
         "embedded://benilla_assets/shaders/wow_model.wgsl".into()
     }
 
+    /// The depth-only stage Bevy's shadow views (and any depth prepass) draw the lane with: the
+    /// colour pass's placement and skinning, no lighting. Stock Benilla spawns no shadow-casting
+    /// light, so only a program that does runs it.
+    fn prepass_vertex_shader() -> ShaderRef {
+        "embedded://benilla_assets/shaders/wow_model_depth.wgsl".into()
+    }
+
+    fn prepass_fragment_shader() -> ShaderRef {
+        "embedded://benilla_assets/shaders/wow_model_depth.wgsl".into()
+    }
+
     /// The reference writes depth for every M2 batch, transparent ones too, and tests `LEQUAL`,
     /// unless render flag 0x10 (no write) or 0x08 (no test) clears it (`0x70c190`).
     fn specialize(
@@ -157,6 +191,13 @@ impl MaterialExtension for WowModelExt {
         layout: &MeshVertexBufferLayoutRef,
         key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
+        if descriptor
+            .vertex
+            .shader_defs
+            .contains(&"PREPASS_PIPELINE".into())
+        {
+            return specialize_depth(descriptor, layout, &key.bind_group_data);
+        }
         // `WOW_RIG_SKIN` skins from the shared buffer's palette. The base layout lacks our joint
         // attributes: rebuild it with Bevy's conditionals (mesh.rs, locations 0-5) plus 10/11.
         if layout.0.contains(crate::ATTRIBUTE_WOW_JOINT_INDEX) {
@@ -329,6 +370,57 @@ impl MaterialExtension for WowModelExt {
     }
 }
 
+/// The depth-only pipeline (`wow_model_depth.wgsl`): Bevy's prepass locations (position 0, UV_0
+/// 1, UV_1 2) plus the palette joints at 10/11, a plain depth state, and `WOW_NO_CAST` for every
+/// batch whose colour pass is not a solid surface (clutter, the fade twin, blends that add or
+/// multiply, the depth prime, the sky lane, the straddle's far copy, no depth write or test).
+fn specialize_depth(
+    descriptor: &mut RenderPipelineDescriptor,
+    layout: &MeshVertexBufferLayoutRef,
+    key: &WowModelKey,
+) -> Result<(), SpecializedMeshPipelineError> {
+    let mut attrs = Vec::with_capacity(5);
+    for (attr, loc) in [
+        (Mesh::ATTRIBUTE_POSITION, 0),
+        (Mesh::ATTRIBUTE_UV_0, 1),
+        (Mesh::ATTRIBUTE_UV_1, 2),
+    ] {
+        if layout.0.contains(attr) {
+            attrs.push(attr.at_shader_location(loc));
+        }
+    }
+    let mut defs = Vec::new();
+    if layout.0.contains(crate::ATTRIBUTE_WOW_JOINT_INDEX) {
+        defs.push("WOW_RIG_SKIN".into());
+        attrs.push(crate::ATTRIBUTE_WOW_JOINT_INDEX.at_shader_location(10));
+        attrs.push(crate::ATTRIBUTE_WOW_JOINT_WEIGHT.at_shader_location(11));
+    }
+    descriptor.vertex.buffers = vec![layout.0.get_layout(&attrs)?];
+    let no_cast = key.clutter
+        || key.fade
+        || key.additive
+        || key.modulate
+        || key.modulate2x
+        || key.zfill
+        || key.sky_depth
+        || key.far_side
+        || key.no_depth_write
+        || key.no_depth_test;
+    if no_cast {
+        defs.push("WOW_NO_CAST".into());
+    }
+    descriptor.vertex.shader_defs.extend(defs.iter().cloned());
+    if let Some(fragment) = descriptor.fragment.as_mut() {
+        fragment.shader_defs.extend(defs);
+    }
+    if let Some(ds) = descriptor.depth_stencil.as_mut() {
+        ds.depth_write_enabled = true;
+        ds.depth_compare = CompareFunction::GreaterEqual;
+        ds.bias = Default::default();
+    }
+    Ok(())
+}
+
 /// Distant low-detail terrain (WDL), the horizon hills beyond the streamed tiles: opaque white
 /// geometry under the scene fog colour at the hull pass's own start 0 and end 1.0.
 pub type WdlMaterial = ExtendedMaterial<StandardMaterial, WdlExt>;
@@ -347,6 +439,10 @@ impl MaterialExtension for WdlExt {
     }
     fn fragment_shader() -> ShaderRef {
         "embedded://benilla_assets/shaders/wdl.wgsl".into()
+    }
+    /// The horizon hull is under the fog: it never casts.
+    fn enable_shadows() -> bool {
+        false
     }
 }
 
@@ -389,6 +485,11 @@ impl MaterialExtension for LiquidExt {
     }
     fn fragment_shader() -> ShaderRef {
         "embedded://benilla_assets/shaders/liquid.wgsl".into()
+    }
+
+    /// A water sheet never casts.
+    fn enable_shadows() -> bool {
+        false
     }
 
     /// `sky_order::WATER_BIAS` (−2e4) is a sort rung, kept out of the rasterizer: as a depth-bias

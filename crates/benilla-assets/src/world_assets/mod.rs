@@ -746,6 +746,16 @@ impl WorldAssets {
         if let Some(handle) = self.textures.fetch(&key) {
             return Some(handle);
         }
+        // An embedding app's replacement world art (ground clutter binds through here), if any.
+        let blp = format!("{}.blp", key.0);
+        if let Some(t) = crate::texture_source::replacement(&blp, crate::bc_supported()) {
+            let size = (t.width, t.height);
+            let image =
+                crate::blp::world_art_levels(size, t.mip_count, t.format, t.chain.to_vec(), wrap);
+            let handle = images.add(image);
+            self.textures.insert(key, handle.clone());
+            return Some(handle);
+        }
         // World art uploads as the file stores it; nothing reads it main-side.
         let chain = model_texture_chain(&self.chain.lock_recover(), path)?;
         let handle = images.add(repeat_texture_authored(crate::for_upload(chain), wrap));
@@ -779,8 +789,12 @@ impl WorldAssets {
         if let Some(cached) = self.cache.sprites.get(&key) {
             return cached;
         }
-        let loaded = decode_texture(&self.chain, &self.loose, path, open)
-            .map(|(w, h, rgba)| images.add(sprite_image(w, h, rgba)));
+        let loaded = crate::texture_source::ui_sprite(&key, false)
+            .map(|image| images.add(image))
+            .or_else(|| {
+                decode_texture(&self.chain, &self.loose, path, open)
+                    .map(|(w, h, rgba)| images.add(sprite_image(w, h, rgba)))
+            });
         let open = loose_open_for(path, open);
         self.cache.sprites.insert(key, open, loaded.clone());
         loaded
@@ -830,8 +844,12 @@ impl WorldAssets {
         if let Some(cached) = self.cache.tiled.get(&key) {
             return cached;
         }
-        let loaded = decode_texture(&self.chain, &self.loose, path, LooseOpen::Index)
-            .map(|(w, h, rgba)| images.add(sprite_image_tiled(w, h, rgba)));
+        let loaded = crate::texture_source::ui_sprite(&key, true)
+            .map(|image| images.add(image))
+            .or_else(|| {
+                decode_texture(&self.chain, &self.loose, path, LooseOpen::Index)
+                    .map(|(w, h, rgba)| images.add(sprite_image_tiled(w, h, rgba)))
+            });
         let open = loose_open_for(path, LooseOpen::Index);
         self.cache.tiled.insert(key, open, loaded.clone());
         loaded

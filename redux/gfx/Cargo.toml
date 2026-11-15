@@ -1,0 +1,30 @@
+[package]
+name = "redux-gfx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "benilla-redux's graphics: MSAA/anisotropy defaults, TAA, DLSS and the Enhanced effects, ported from Elderoth's elderoth-gfx"
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy.workspace = true
+benilla-world.workspace = true
+benilla-assets.workspace = true
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+
+# DLSS through NVIDIA Streamline (`dlss`): the Vulkan device is created through Streamline's
+# `sl.interposer.dll`, loaded at run time from `redux/overrides/streamline/`. The same wgpu and
+# ash Bevy already builds.
+wgpu = { version = "27.0.1", default-features = false, features = ["vulkan"], optional = true }
+ash = { version = "0.38.0", optional = true }
+libloading = { version = "0.8", optional = true }
+
+[features]
+dlss = ["dep:wgpu", "dep:ash", "dep:libloading"]
+
+[dev-dependencies]
+# Validates the full-screen pass shaders in tests: the same naga Bevy compiles them with.
+naga = { version = "27.0.3", features = ["wgsl-in"] }

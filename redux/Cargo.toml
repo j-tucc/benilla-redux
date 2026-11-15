@@ -1,0 +1,66 @@
+# benilla-redux's own workspace (REDUX.md, rule 1): redux crates live here, beside upstream's
+# workspace rather than in it, so upstream's root `Cargo.toml` and `Cargo.lock` stay untouched.
+# Upstream crates are path dependencies and keep their own workspace inheritance.
+# `Cargo.lock` here started as a copy of the root's, so redux builds benilla at the versions
+# benilla is built with; refresh it from the root's after an upstream merge.
+[workspace]
+resolver = "2"
+members = ["launcher", "gfx", "packs", "smooth"]
+# Its own workspace (`redux/headless/Cargo.toml`); the launcher uses its plugin as a path dependency.
+exclude = ["headless"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+
+[workspace.dependencies]
+benilla-app = { path = "../crates/benilla-app", default-features = false }
+benilla-world = { path = "../crates/benilla-world" }
+benilla-assets = { path = "../crates/benilla-assets" }
+benilla-buildstamp = { path = "../crates/benilla-buildstamp" }
+# benilla's bevy, adding no features (its defaults bring the audio stack back).
+bevy = { version = "0.18.1", default-features = false, features = [
+    "default_app",
+    "default_platform",
+    "2d_bevy_render",
+    "3d_bevy_render",
+    "ui_api",
+    "ui_bevy_render",
+    "scene",
+    "picking",
+] }
+
+# Cargo reads `[patch]` and `[profile]` from the root manifest only, so benilla's are repeated
+# (see the root `Cargo.toml` for why each exists).
+[patch.crates-io]
+kira = { path = "../third_party/kira" }
+alsa = { path = "../third_party/alsa-0.9" }
+wgpu-hal = { path = "../third_party/wgpu-hal" }
+
+[profile.dev.package."*"]
+opt-level = 3
+codegen-units = 1
+
+[profile.dev.package.benilla-movie]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+lto = "off"
+
+[profile.ship]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[profile.play]
+inherits = "release"
+incremental = true
+lto = "off"
+
+[profile.play.package."*"]
+codegen-units = 1

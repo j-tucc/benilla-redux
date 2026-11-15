@@ -1,0 +1,15 @@
+[package]
+name = "redux-smooth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "benilla-redux's smoothed character models (PN-triangle refinement), ported from Elderoth's benilla-adapter"
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy.workspace = true
+benilla-assets.workspace = true
+benilla-world.workspace = true
+toml = "0.8"

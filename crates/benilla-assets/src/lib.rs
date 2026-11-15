@@ -36,10 +36,19 @@ pub use model::{
 };
 mod adt;
 mod terrain;
+mod terrain_source;
+pub use terrain_source::{
+    set_terrain_layer_source, LayerOverride, TerrainLayerSource, TileLayerReport,
+};
 mod wdt;
 pub use adt::{chunk_to_mesh, chunks_to_mesh, AdtLoader, AdtTile, ChunkShading};
 pub use wdt::{WdtIndex, WdtIndexLoader};
 mod blp;
+mod texture_source;
+pub use texture_source::{
+    liquid_frame_array_override, set_ui_sprite_source, set_world_texture_source,
+    world_texture_override, TextureOverride, UiSpriteSource, WorldTextureSource,
+};
 mod tga_chain;
 pub use blp::{BlpImageLoader, BlpLoaderSettings, BlpVariant};
 /// Whether this GPU takes WoW's stored DXT blocks, and the chain form that follows.

@@ -18,9 +18,14 @@ use bevy::prelude::*;
 use bevy::reflect::TypePath;
 
 use crate::coords::wow_to_bevy;
+use crate::gpu_blp::bc_supported;
 use crate::terrain::{
     alpha_array_image, layer_array_image, pack_layers, shadow_array_image, RawLayer, LAYER_TEX_SIZE,
 };
+use crate::terrain_source::{layer_source, replacement_layers, TileLayerReport};
+
+/// Layer 0's solid colour, sampled where an MTEX texture fails to read.
+const LAYER_FALLBACK: [u8; 4] = [107, 133, 82, 0];
 
 /// A loaded ADT tile; the app builds its meshes with [`chunk_to_mesh`].
 #[derive(Asset, TypePath)]
@@ -157,6 +162,21 @@ impl AssetLoader for AdtLoader {
 
         let mut shading: Vec<ChunkShading> = Vec::with_capacity(tile.chunks.len());
 
+        // A replacement source, when the embedding app set one, takes the whole tile or none of it.
+        // One source for the whole tile, even if the app swaps it while this tile loads.
+        let source = layer_source();
+        let replaced = source.as_ref().map(|source| {
+            let keys = layer_keys(&tile.chunks);
+            let packed = replacement_layers(&**source, &keys, LAYER_FALLBACK, bc_supported());
+            if packed.is_ok() {
+                // The indices the stock path would give: first seen, after the fallback.
+                for (i, key) in keys.into_iter().enumerate() {
+                    layer_index.insert(key, i as u32 + 1);
+                }
+            }
+            packed
+        });
+
         for chunk in tile.chunks.iter() {
             // A hole-emptied chunk takes no alpha or shadow slot either.
             if chunk.indices.len() < 3 {
@@ -215,16 +235,34 @@ impl AssetLoader for AdtLoader {
             shadow_count = 1;
         }
 
-        let layer_count = layers.len() as u32 + 1;
-        let packed = pack_layers([107, 133, 82, 0], layers);
+        let (layer_count, size, packed, reason) = match replaced {
+            Some(Ok((size, packed))) => (layer_index.len() as u32 + 1, size, packed, None),
+            stock => (
+                layers.len() as u32 + 1,
+                LAYER_TEX_SIZE,
+                pack_layers(LAYER_FALLBACK, layers),
+                stock.and_then(Result::err),
+            ),
+        };
         // Per tile, so a log shows which tiles fell back to the decoded format.
         debug!(
-            "adt {}: layer array {layer_count} x {:?}, {} KiB",
+            "adt {}: layer array {layer_count} x {size}² {:?}, {} KiB",
             ctx.path(),
             packed.format,
             packed.data.len() >> 10
         );
-        let layer_array = layer_array_image(LAYER_TEX_SIZE, layer_count, packed);
+        if let Some(source) = &source {
+            source.packed(&TileLayerReport {
+                tile: ctx.path().to_string(),
+                layers: layer_count,
+                size,
+                format: packed.format,
+                bytes: packed.data.len(),
+                replaced: reason.is_none(),
+                reason,
+            });
+        }
+        let layer_array = layer_array_image(size, layer_count, packed);
         let alpha_array = alpha_array_image(ALPHA_MAP_SIZE, alpha_count, alpha_buf);
         let shadow_array = shadow_array_image(SHADOW_MAP_SIZE, shadow_count, shadow_buf);
 
@@ -260,6 +298,20 @@ async fn read_layer(ctx: &mut LoadContext<'_>, key: &str) -> Option<RawLayer> {
     let bytes = ctx.read_asset_bytes(mpq_url(key)).await.ok()?;
     let chain = blp_bytes_to_native_chain(&bytes).ok()?;
     Some(RawLayer { chain, matte: true })
+}
+
+/// The tile's unique normalized layer keys in the order the stock packer meets them.
+fn layer_keys(chunks: &[ChunkMesh]) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    for chunk in chunks.iter().filter(|c| c.indices.len() >= 3) {
+        for name in chunk.layer_textures.iter().take(4) {
+            let key = normalize_path(name);
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
 }
 
 /// An internal path as an `mpq://` URL.

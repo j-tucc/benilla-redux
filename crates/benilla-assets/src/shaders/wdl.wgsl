@@ -16,6 +16,7 @@
     view_transformations::{position_world_to_clip, view_z_to_depth_ndc},
     mesh_view_bindings::view,
 }
+#import benilla::{gfx_data, gfx_hooks}
 
 /// How far the band reaches inside the far-clip wall: the reference's far-band near plane
 /// `farclip - 33.0` (`[0x8101b0]`, about one WDL outer cell).
@@ -34,6 +35,9 @@ struct WowLight {
     _light_spec: vec4<f32>,    // 3
     fog_color: vec4<f32>,      // 4 rgb = Light.dbc row 7 (gamma 0..1); w = enable (>0.5 ⇒ blend)
     fog_params: vec4<f32>,     // 5 xy = scene fog start/end (unread); w = farclip wall (0 = off)
+    _rows: array<vec4<f32>, 15>, // 6-20 SH, water, grade, interior fog, point count
+    _points: array<vec4<f32>, 512>, // 21-532 the point-light table
+    gfx: gfx_data::GfxData,  // the optional graphics' block (`lighting::GfxData`)
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> w: WowLight;
 
@@ -73,6 +77,17 @@ fn fragment(in: WdlVsOut) -> WdlFsOut {
     var rgb = vec3<f32>(1.0);
     if (w.fog_color.w > 0.5) {
         rgb = w.fog_color.xyz;
+        // The program's fog hook may paint its own far colour along the view ray, under the
+        // hull's own (0, 1) pair; the stock hook returns the colour unchanged.
+        rgb = gfx_hooks::gfx_fog(
+            rgb,
+            vec2<f32>(0.0, 1.0),
+            eye_z,
+            in.world_position.xyz,
+            view.world_position,
+            true,
+            w.gfx,
+        ).rgb;
     }
 
     var out: WdlFsOut;

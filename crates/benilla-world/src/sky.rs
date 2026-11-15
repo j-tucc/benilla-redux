@@ -55,6 +55,9 @@ pub struct SkyExt {
     /// none), `y` the sun azimuth `atan2(sun.z, sun.x)` in radians, `zw` reserved.
     #[uniform(100)]
     pub(crate) warp: Vec4,
+    /// The shared light buffer, read only for the program's graphics data (`gfx_hooks::gfx_sky`).
+    #[storage(90, read_only, buffer)]
+    pub(crate) light_buf: bevy::render::render_resource::Buffer,
 }
 
 impl MaterialExtension for SkyExt {
@@ -65,6 +68,11 @@ impl MaterialExtension for SkyExt {
 
     fn fragment_shader() -> ShaderRef {
         "embedded://benilla_world/shaders/sky.wgsl".into()
+    }
+
+    /// A sky element never casts.
+    fn enable_shadows() -> bool {
+        false
     }
 
     /// No depth write, as every sky element inherits from `CSky::Render` (`0x6d4940`); the depth
@@ -166,7 +174,12 @@ fn setup_sky(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<SkyMaterial>>,
+    light: Option<Res<crate::lighting::SharedLightBuffer>>,
 ) {
+    // A headless build has no device, hence no light buffer to bind and no dome to draw.
+    let Some(light) = light else {
+        return;
+    };
     let mesh = meshes.add(dome_mesh());
     // Seeded with the neutral-day fallback; `update_sky_colors` overwrites from Light.dbc each frame.
     let material = materials.add(SkyMaterial {
@@ -183,6 +196,7 @@ fn setup_sky(
             sky4: col([0.78, 0.86, 0.95]),
             fog: col([0.55, 0.72, 0.92]),
             warp: Vec4::ZERO, // update_sky_colors fills S + sun azimuth each frame
+            light_buf: light.0.clone(),
         },
     });
     commands.spawn((

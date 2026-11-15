@@ -1,0 +1,5 @@
+# redux's build output.
+/target/
+# Local-only third-party SDKs and overrides (REDUX.md, rule 3): the Streamline/DLSS SDK goes in
+# `overrides/streamline/<tag>/`, extracted from NVIDIA's release zip. Never committed.
+/overrides/

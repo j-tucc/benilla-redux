@@ -9,11 +9,12 @@
 // Bevy's `VertexOutput` has no slot for the interpolated specular, so the vertex transform and IO
 // struct are our own and `main_pass_post_lighting_processing` is dropped; fog is in-shader.
 
+#import benilla::{gfx_data, gfx_hooks}
 #import bevy_pbr::{
     mesh_functions,
     forward_io::Vertex,
     view_transformations::position_world_to_clip,
-    mesh_view_bindings::view,
+    mesh_view_bindings::{view, directional_shadow_textures, directional_shadow_textures_comparison_sampler},
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var layer_array: texture_2d_array<f32>;
@@ -46,6 +47,8 @@ struct WowLight {
     // then two rows per light, `[pos.xyz, range]` and `[rgb, 0]`.
     point_count: vec4<f32>,
     points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
@@ -61,6 +64,10 @@ struct TerrainVsOut {
     // carried torch is (1.4, 0.87, 0.40)) saturates one vertex and falls off linearly from it,
     // where clamping per pixel would pin a wide plateau at white.
     @location(6) primary: vec3<f32>,
+    // For the program's light hook (`gfx_hooks::gfx_lit`): the MCNR normal, and the part of
+    // `primary` no sun ray carries (ambient and point lights, clamped alike).
+    @location(7) normal: vec3<f32>,
+    @location(8) unsunned: vec3<f32>,
 }
 
 // Terrain's point-light candidacy half-width (yd): `w + 10`, `w` being the chunk's bounding-sphere
@@ -161,6 +168,8 @@ fn vertex(in: Vertex) -> TerrainVsOut {
         vec3<f32>(0.0),
         vec3<f32>(1.0),
     );
+    out.normal = n;
+    out.unsunned = clamp(wow_light.light_ambient.rgb + points, vec3<f32>(0.0), vec3<f32>(1.0));
     return out;
 }
 
@@ -205,7 +214,19 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
     specmask = mix(specmask, s2.a, a.g);
     specmask = mix(specmask, s3.a, a.b);
 
-    let primary = in.primary;
+    // The program's light hook: the stock sum unless the program replaces the hooks.
+    let lit = gfx_hooks::gfx_lit(
+        gfx_hooks::GFX_LIT_TERRAIN,
+        in.primary,
+        in.unsunned,
+        in.world_position.xyz,
+        in.normal,
+        view.world_position.xyz,
+        directional_shadow_textures,
+        directional_shadow_textures_comparison_sampler,
+        wow_light.gfx,
+    );
+    let primary = lit.rgb;
 
     // MCSH baked shadow. With `pixelShaders` and `specular` on, terrain is one pass through
     // `terrainp_s.bls`, which reads the MCSH bit from the blend texture's alpha (1 lit, 0 shadowed)
@@ -215,22 +236,44 @@ fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
     // implicit derivatives need uniform control flow, and `si` is a varying.
     let si = in.uv_b.y;
     let mcsh = textureSample(shadow_array, splat_samp, auv, max(i32(round(si)), 0)).r;
-    let shadow_lit = select(1.0, 1.0 - mcsh, si >= 0.0);
+    // The program's own shadow may stand in for the bake (`gfx_hooks::gfx_baked_aside`, 0 stock).
+    let aside = gfx_hooks::gfx_baked_aside(in.world_position.xyz, view.world_position.xyz, wow_light.gfx);
+    let shadow_lit = select(1.0, 1.0 - mcsh * (1.0 - aside), si >= 0.0);
 
     // The `terrainp_s.bls` combine, then an LDR clamp:
     //   diffuse  = tex · primary · (0.3·shadow + 0.7)   (a flat −30% in shadow, no tint)
     //   specular = sheen · mask · shadow                 (none in shadow)
     let diffuse_term = color * primary * (0.3 * shadow_lit + 0.7);
-    let spec_term = in.specular * specmask * shadow_lit;
-    var tuned = clamp(diffuse_term + spec_term, vec3<f32>(0.0), vec3<f32>(1.0));
+    let spec_term = in.specular * specmask * (shadow_lit * lit.w);
+    // The program's surface hook (`gfx_hooks::gfx_surface`, the sum unchanged stock).
+    let surface = gfx_hooks::gfx_surface(
+        gfx_hooks::GFX_LIT_TERRAIN,
+        diffuse_term + spec_term,
+        color,
+        primary * (0.3 * shadow_lit + 0.7),
+        shadow_lit * lit.w,
+        in.world_position.xyz,
+        in.normal,
+        view.world_position.xyz,
+        wow_light.gfx,
+    );
+    var tuned = clamp(surface, vec3<f32>(0.0), vec3<f32>(1.0));
 
     // Gamma-space GL_LINEAR fog on planar eye-Z, as the reference computes `fogcoord`, not radial
     // distance. Per pixel matches its per-vertex fog, since a linear factor interpolates exactly.
+    // `gfx_hooks::gfx_fog` returns that law unless the program replaces the hooks.
     if (wow_light.fog_color.w > 0.5) {
         let eye_z = -(view.view_from_world * vec4<f32>(in.world_position.xyz, 1.0)).z;
-        let denom = max(wow_light.fog_params.y - wow_light.fog_params.x, 0.001);
-        let factor = clamp((wow_light.fog_params.y - eye_z) / denom, 0.0, 1.0);
-        tuned = mix(wow_light.fog_color.xyz, tuned, factor);
+        let fog = gfx_hooks::gfx_fog(
+            wow_light.fog_color.xyz,
+            wow_light.fog_params.xy,
+            eye_z,
+            in.world_position.xyz,
+            view.world_position.xyz,
+            true,
+            wow_light.gfx,
+        );
+        tuned = mix(fog.rgb, tuned, fog.w);
     }
 
     // Raw gamma out: the framebuffer holds gamma bytes and blends in gamma like the reference's;

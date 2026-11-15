@@ -12,6 +12,7 @@
 // - BLEND_MOD2X:    (rgb, 1) under (Dst, Src) = `2·src·dst`, rain's state; reads no alpha.
 
 #import bevy_render::view::View
+#import benilla::{gfx_data, gfx_hooks}
 
 // Prefix of `lighting::global_light`'s buffer; keep in sync with wow_model.wgsl's copy.
 struct WowLight {
@@ -30,6 +31,11 @@ struct WowLight {
     sh_c16: vec4<f32>,
     _water: array<vec4<f32>, 4>,
     grade: vec4<f32>,
+    _wmo_fog: array<vec4<f32>, 2>,
+    point_count: vec4<f32>,
+    points: array<vec4<f32>, 512>,
+    // The optional graphics' per-frame block (`lighting::GfxData`), read only by the program's hooks.
+    gfx: gfx_data::GfxData,
 };
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -63,6 +69,8 @@ struct VertexOutput {
     @location(1) color: vec4<f32>,
     // Planar eye-Z for fog and the farclip wall, positive in front of the camera.
     @location(2) view_z: f32,
+    // The vertex minus the camera (Bevy world, yd), for the modern fog's radial distance.
+    @location(3) cam_offset: vec3<f32>,
 };
 
 @vertex
@@ -75,6 +83,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.clip_position = view.clip_from_world * vec4<f32>(v.position, 1.0);
     // Eye-Z via the full affine transform; its rounding is yard-scale and harmless.
     out.view_z = -(view.view_from_world * vec4<f32>(v.position, 1.0)).z;
+    out.cam_offset = v.position - view.world_position;
 #else
     // Cam-relative verts: view_from_world is [R | −R·cam] and the rebase already subtracted cam,
     // so only the rotation applies.
@@ -85,6 +94,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     ) * v.position;
     out.clip_position = view.clip_from_view * vec4<f32>(view_pos, 1.0);
     out.view_z = -view_pos.z;
+    out.cam_offset = v.position;
 #endif
     out.uv = v.uv;
     out.color = v.color;
@@ -140,13 +150,21 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Scene fog: the world's linear fog (same start and end, planar eye-Z) in gamma space before
     // the blend; only its colour follows the per-blend policy in `wow_params.fog.x`.
     if (wow_light.fog_color.w > 0.5 && wow_params.fog.x > 0.5) {
-        let denom = max(wow_light.fog_params.y - wow_light.fog_params.x, 0.001);
-        let factor = clamp((wow_light.fog_params.y - in.view_z) / denom, 0.0, 1.0);
         var fog_rgb = wow_light.fog_color.xyz;
         if (wow_params.fog.x > 1.5 && wow_params.fog.x < 2.5) { fog_rgb = vec3<f32>(0.0); }
         else if (wow_params.fog.x > 2.5 && wow_params.fog.x < 3.5) { fog_rgb = vec3<f32>(1.0); }
         else if (wow_params.fog.x > 3.5) { fog_rgb = RAIN_FOG_GREY; }
-        rgb = mix(fog_rgb, rgb, factor);
+        // Classic is the 1.12 linear law on planar eye-Z (`gfx_hooks::gfx_fog_linear`).
+        let fog = gfx_hooks::gfx_fog(
+            fog_rgb,
+            wow_light.fog_params.xy,
+            in.view_z,
+            view.world_position + in.cam_offset,
+            view.world_position,
+            wow_params.fog.x < 1.5,
+            wow_light.gfx,
+        );
+        rgb = mix(fog.rgb, rgb, fog.w);
     }
     // Rain's forced fog: grey over the draw's own start/end, whatever the scene fog; grey is
     // neutral under Mod2x, so this is the streaks' distance fade.
