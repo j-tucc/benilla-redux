@@ -25,6 +25,7 @@ mod icons;
 #[cfg(feature = "reporter")]
 mod report;
 pub mod switch;
+mod ui;
 
 pub use catalog::{ActivePack, PackCatalog, VANILLA};
 
@@ -36,6 +37,8 @@ const OVERRIDES: &str = "classic-overrides";
 pub struct TextureSettings {
     pub texture_pack: Option<String>,
     pub hd_icons: Option<bool>,
+    /// The active pack's UI art (default on under a pack).
+    pub pack_ui: Option<bool>,
 }
 
 impl TextureSettings {
@@ -74,7 +77,7 @@ pub struct TextureBoot {
     pub catalog: PackCatalog,
     pub active: ActivePack,
     pub config_dir: Option<PathBuf>,
-    icons: Option<Arc<icons::HdIcons>>,
+    ui: Arc<ui::UiSprites>,
 }
 
 /// Discovers the packs and icons from `starts` (the checkout, the binary's folder), installs the
@@ -91,17 +94,27 @@ pub fn boot(config_dir: Option<PathBuf>, starts: &[PathBuf]) -> TextureBoot {
         overrides_dir(starts, "ICONS"),
     );
     let icons = root.map(|dir| Arc::new(icons::HdIcons::spawn(dir)));
-    benilla_assets::set_ui_sprite_source(
-        icons
-            .clone()
-            .map(|i| i as Arc<dyn benilla_assets::UiSpriteSource>),
+    let pack_ui = match std::env::var("REDUX_PACK_UI").as_deref() {
+        Ok("0") | Ok("off") => false,
+        Ok(_) => true,
+        Err(_) => saved.pack_ui.unwrap_or(true),
+    };
+    let ui = ui::install(icons, pack_ui);
+    ui::set_pack(active.source.as_ref());
+    eprintln!(
+        "HD_ICONS {}; PACK_UI {}",
+        if ui.icons_on() { "on" } else { "off" },
+        if pack_ui && active.source.is_some() {
+            "on"
+        } else {
+            "off"
+        }
     );
-    eprintln!("HD_ICONS {}", if icons.is_some() { "on" } else { "off" });
     TextureBoot {
         catalog,
         active,
         config_dir,
-        icons,
+        ui,
     }
 }
 
@@ -134,13 +147,17 @@ fn icon_probe(time: Res<Time<Real>>, boot: Res<TextureBoot>, mut done: Local<boo
         return;
     }
     *done = true;
-    match &boot.icons {
+    let pack = boot
+        .ui
+        .pack_served
+        .load(std::sync::atomic::Ordering::Relaxed);
+    match boot.ui.icons() {
         Some(icons) => eprintln!(
-            "HD_ICONS_PROBE served={} failures={}",
+            "HD_ICONS_PROBE served={} failures={} pack_ui_served={pack}",
             icons.served.load(std::sync::atomic::Ordering::Relaxed),
             icons.failures.load(std::sync::atomic::Ordering::Relaxed)
         ),
-        None => eprintln!("HD_ICONS_PROBE off"),
+        None => eprintln!("HD_ICONS_PROBE off pack_ui_served={pack}"),
     }
 }
 

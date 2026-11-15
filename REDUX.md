@@ -84,6 +84,11 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     runs switches the pack live (images reload, then the world rebuilds); HD icons follow the file
     on restart. `REDUX_TEXTURE_PACK=<name>` pins a pack for one session. Unattended runs use
     vanilla and stock icons unless the variables name them.
+  - The pack's `textures/interface/` art (4x, BC7) replaces the UI textures it holds: frames,
+    buttons, icons and the login screens, laid out at the stock sizes. HD icons win over the
+    pack's icons when both are on. `pack_ui = false` (or `REDUX_PACK_UI=0`) keeps the stock UI
+    under a pack. UI art follows the pack chosen at startup: benilla caches each UI texture for
+    the session, so after a live switch the rest of the UI changes on restart.
   - Character skins stay stock (benilla composites them on the CPU from the archives).
   - Boot lines `TEXTURE_PACKS …`, `TEXTURE_PACK on/off …` and `HD_ICONS …` say what was found;
     `REDUX_TEXTURE_PROBE=<seconds>` prints what the pack served by then.
