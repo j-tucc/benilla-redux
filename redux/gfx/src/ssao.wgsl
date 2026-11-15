@@ -166,8 +166,12 @@ fn occlude(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
         let v = view_at(q, zq) - p;
         let vv = dot(v, v);
         let w = saturate(1.0 - vv / r2);
+        // Only a tap risen above the bias horizon occludes, renormalised so a right-angle contact
+        // keeps its weight. 1.12's low-poly meshes meet at hard creases (terrain triangles, trunk
+        // segments) whose shallow fold is a large cosine bias away from occluding at all.
         occ += w * max(0.0, dot(v, n) * inverseSqrt(vv + 1e-6) - ao.params.w);
     }
+    occ /= 1.0 - ao.params.w;
     occ = saturate(ao.gain.y * occ / f32(count)) * fade;
     return vec4(occ, dist, protect, smooth_surface);
 }
