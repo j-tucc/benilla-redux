@@ -74,8 +74,10 @@ path dependencies. After an upstream merge, refresh `redux/Cargo.lock` from the 
     (ocean, river, lake) and WMO exterior water. Refraction and depth absorption read a copy of
     the opaque scene taken before the water draws, so MSAA keeps working. The water also gets
     screen-space reflections with a sky fallback, sun and moon glints, caustics, shore foam,
-    soft edges against geometry and Snell's window from below. `gfx_waves` adds Gerstner swell on
-    ocean and lake. Magma, slime and interior pools keep the stock shader. The surfaces swap onto
+    soft edges against geometry and Snell's window from below. `gfx_waves` adds an FFT ocean
+    (`redux/gfx/src/ocean.rs`, three GPU cascades, one fixed prevailing wind): a choppy, displaced
+    swell with breaking-crest foam on the ocean, whose meshes are subdivided for it, and a gentle
+    chop on lakes and rivers. Magma, slime and interior pools keep the stock shader. The surfaces swap onto
     redux's own material from outside the engine, with no upstream patch.
     `REDUX_WATER_DEBUG=1|2|3` paints the copied depth, the water column or the copied colour.
   - DLSS needs the `dlss` feature (`cargo build --release -p benilla-redux --features dlss`)
