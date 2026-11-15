@@ -6,8 +6,8 @@
 [workspace]
 resolver = "2"
 members = ["launcher", "gfx", "packs", "smooth"]
-# Its own workspace (`redux/headless/Cargo.toml`); the launcher uses its plugin as a path dependency.
-exclude = ["headless"]
+# Their own workspaces (`redux/headless`, `redux/cursor`); the launcher uses their plugins as path dependencies.
+exclude = ["headless", "cursor"]
 
 [workspace.package]
 version = "0.1.0"

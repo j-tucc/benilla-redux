@@ -73,6 +73,9 @@ fn main() -> benilla_app::AppExit {
     let smooth = redux_smooth::SmoothPlugin {
         config_dir: state_dir.clone(),
     };
+    let cursor = redux_cursor::CursorSizePlugin {
+        state_dir: state_dir.clone(),
+    };
     redux_gfx::set_state_dir(state_dir);
     let build = BuildId {
         version: env!("CARGO_PKG_VERSION"),
@@ -88,6 +91,7 @@ fn main() -> benilla_app::AppExit {
         app.add_plugins(redux_gfx::GfxPlugin)
             .add_plugins(redux_packs::PacksPlugin(textures))
             .add_plugins(smooth)
+            .add_plugins(cursor)
             .add_plugins(redux_headless::HeadlessPlugin);
     })
 }

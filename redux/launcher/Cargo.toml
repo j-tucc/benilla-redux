@@ -22,6 +22,8 @@ benilla-world.workspace = true
 redux-gfx = { path = "../gfx" }
 redux-packs = { path = "../packs" }
 redux-smooth = { path = "../smooth" }
+# Cursor Size (`redux/cursor/README.md`).
+redux-cursor = { path = "../cursor", default-features = false }
 # Hidden-window screenshot runs for agents (`REDUX_HEADLESS=1`, `redux/headless/README.md`); inert otherwise.
 redux-headless = { path = "../headless", default-features = false }
 bevy.workspace = true
