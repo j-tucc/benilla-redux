@@ -3,7 +3,8 @@
 // Firelight (LOOK-16), called from this crate's `gfx_surface` body: fires, braziers and lanterns
 // light the exterior surfaces round them per pixel, with a warm windowed inverse-square falloff,
 // a wrapped facing term and a gentle flicker. The `FIRES` rows (`firelight.rs`) hold the nearest
-// outdoor point lights of the engine's own table: (world xyz, packed colour). `MISC` y is how
+// outdoor point lights of the engine's own table: (world xyz, packed colour, its sign set when the
+// flicker is already in it). `MISC` y is how
 // many are live, z the gain, w the flicker clock (seconds, wrapped where every flicker cycle is
 // whole). A zero count adds nothing.
 //
@@ -65,7 +66,11 @@ fn fire_one(row: vec4<f32>, world_pos: vec3<f32>, n: vec3<f32>, has_n: bool, clo
         facing = max((dot(n, to_light / max(d, 1e-4)) + FIRE_WRAP) / (1.0 + FIRE_WRAP), 0.0);
     }
     let rgb = fire_rgb(row.w);
-    return rgb * (falloff * facing * fire_flicker(clock, row.xyz, rgb));
+    // A carried light's word has its sign set: it moves, so `firelight.rs` put its flicker in the
+    // colour on a phase of its own, which the position hash here would scramble.
+    let steady = (bitcast<u32>(row.w) & 0x80000000u) != 0u;
+    let flicker = select(fire_flicker(clock, row.xyz, rgb), 1.0, steady);
+    return rgb * (falloff * facing * flicker);
 }
 
 // The firelight reaching a surface at `world_pos` facing `normal`, to multiply its albedo. The
