@@ -1,5 +1,5 @@
 //! Ambient occlusion (LOOK-14): depth-only screen-space occlusion of the opaque scene, darkening
-//! creases, contacts and the feet of walls and trunks. Three full-screen stages right after the
+//! contacts, corners and the feet of walls and trunks. Three full-screen stages right after the
 //! opaque pass ([`ssao.wgsl`]): occlusion at half resolution from the depth alone, a depth-aware
 //! blur that also finds foliage (cutout leaves' depth spikes, where it keeps less occlusion), and a
 //! joint-bilateral upsample multiplied into the main attachment, so the water, the transparencies
@@ -41,12 +41,15 @@ use bevy::{
     },
 };
 
-/// Radius (yd), darkening strength, samples, cosine bias. Source: everwood's High tier.
-const PARAMS: [f32; 4] = [1.5, 0.7, 12.0, 0.05];
+/// Radius (yd), darkening strength, samples, cosine bias. Source: everwood's High tier, with the
+/// bias raised from 0.05 to 0.5 (a horizon 30 degrees above the surface): the shallow folds
+/// between low-poly terrain triangles, trunk segments and wall facets otherwise draw as dark seams.
+const PARAMS: [f32; 4] = [1.5, 0.7, 12.0, 0.5];
 /// Distance fade (yd) and the bright-pixel protection ramp. Source: everwood's High tier.
 const FADE: [f32; 4] = [60.0, 120.0, 0.7, 0.95];
-/// The occlusion gain. Source: everwood's default `GAIN`.
-const GAIN: f32 = 6.0;
+/// The occlusion gain. Source: everwood's default `GAIN` of 6, raised to 7.5 so a right-angle
+/// contact keeps about its old depth under the larger bias.
+const GAIN: f32 = 7.5;
 /// The half-resolution targets.
 const AO_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
