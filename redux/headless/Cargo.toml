@@ -1,0 +1,63 @@
+[package]
+name = "redux-headless"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "benilla-redux's headless capture: a hidden, never-focused window that writes scheduled PNG screenshots, for agents"
+publish = false
+
+# Its own workspace, so upstream's root `Cargo.toml` stays untouched (REDUX.md, rule 2). The lock
+# started as a copy of the root's, so every shared crate resolves to the version benilla is built with.
+[workspace]
+
+[features]
+default = ["dev"]
+# The instruments (`WOW_PROBE_LUA`, `WOW_PROBE_EXIT_AT`, ...), which the driver relies on.
+dev = ["benilla-app/dev"]
+
+[dependencies]
+benilla-app = { path = "../../crates/benilla-app", default-features = false }
+# benilla's version, adding no features: benilla-app turns on the ones it needs.
+bevy = { version = "0.18.1", default-features = false }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../../crates/benilla-buildstamp" }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "benilla-headless"
+path = "src/main.rs"
+test = false
+
+# Cargo reads `[patch]` and `[profile]` from the root manifest only, so benilla's are repeated
+# (see the root `Cargo.toml` for why each exists).
+[patch.crates-io]
+kira = { path = "../../third_party/kira" }
+alsa = { path = "../../third_party/alsa-0.9" }
+wgpu-hal = { path = "../../third_party/wgpu-hal" }
+
+[profile.dev.package."*"]
+opt-level = 3
+codegen-units = 1
+
+[profile.dev.package.benilla-movie]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+lto = "off"
+
+[profile.ship]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[profile.play]
+inherits = "release"
+incremental = true
+lto = "off"
+
+[profile.play.package."*"]
+codegen-units = 1
