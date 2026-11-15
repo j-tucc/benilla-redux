@@ -16,13 +16,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_VMANGOS = Path(r"C:\Users\Nick\Workspace\vmangos")
 BLOCK = 1500  # rows per Lua closure, so no one function holds too many constants
 
 SEC = {
     "SEC_PLAYER": 0, "SEC_MODERATOR": 1, "SEC_TICKETMASTER": 2, "SEC_GAMEMASTER": 3,
     "SEC_BASIC_ADMIN": 4, "SEC_DEVELOPER": 5, "SEC_ADMINISTRATOR": 6, "SEC_CONSOLE": 7,
 }
+
+
+def default_vmangos():
+    """`$VMANGOS_DIR`, else `vmangos` in the folder that holds the main checkout."""
+    if os.environ.get("VMANGOS_DIR"):
+        return os.environ["VMANGOS_DIR"]
+    here = Path(__file__).resolve().parent
+    try:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                cwd=here, capture_output=True, text=True, check=True).stdout.strip()
+        main = Path(common).parent
+    except (OSError, subprocess.CalledProcessError):
+        main = here.parents[1]
+    return str(main.parent / "vmangos")
 
 
 def query(mariadb, args, db, sql):
@@ -83,7 +96,8 @@ def chat_commands(chat_cpp):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True, help="path of GMPanel_Data.lua to write")
-    ap.add_argument("--vmangos", default=os.environ.get("VMANGOS_DIR", str(DEFAULT_VMANGOS)))
+    ap.add_argument("--vmangos", default=default_vmangos(),
+                    help="vmangos folder (default: $VMANGOS_DIR, else vmangos beside the main checkout)")
     ap.add_argument("--db-host", default="127.0.0.1")
     ap.add_argument("--db-port", default="3306")
     ap.add_argument("--db-user", default="mangos")
