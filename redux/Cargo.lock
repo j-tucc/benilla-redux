@@ -642,6 +642,7 @@ dependencies = [
  "benilla-world",
  "bevy",
  "redux-gfx",
+ "redux-headless",
  "redux-packs",
  "redux-smooth",
  "toml",
@@ -5584,6 +5585,15 @@ dependencies = [
  "serde",
  "toml",
  "wgpu",
+]
+
+[[package]]
+name = "redux-headless"
+version = "0.1.0"
+dependencies = [
+ "benilla-app",
+ "benilla-buildstamp",
+ "bevy",
 ]
 
 [[package]]
