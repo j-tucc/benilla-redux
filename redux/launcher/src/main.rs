@@ -87,6 +87,7 @@ fn main() -> benilla_app::AppExit {
     benilla_app::run_with(build, |app| {
         app.add_plugins(redux_gfx::GfxPlugin)
             .add_plugins(redux_packs::PacksPlugin(textures))
-            .add_plugins(smooth);
+            .add_plugins(smooth)
+            .add_plugins(redux_headless::HeadlessPlugin);
     })
 }
