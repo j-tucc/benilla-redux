@@ -278,6 +278,15 @@ impl PackSource {
         Some(chain)
     }
 
+    /// A UI sprite's chain, for a sprite key (`interface\buttons\ui-panel-button-up`, no
+    /// extension), when the pack holds that `interface/…` file.
+    pub(crate) fn ui_texture(&self, sprite_key: &str) -> Option<(dds::Bc7Shape, Arc<[u8]>)> {
+        if !sprite_key.starts_with("interface\\") {
+            return None;
+        }
+        self.serve(&format!("{sprite_key}.blp"), false)
+    }
+
     fn serve(&self, key: &str, square: bool) -> Option<(dds::Bc7Shape, Arc<[u8]>)> {
         let rel = pack_relative(key)?;
         let entry = self.files.get(&rel)?;
@@ -415,6 +424,7 @@ pub(crate) fn install(source: Option<&Arc<PackSource>>) {
     benilla_assets::set_world_texture_source(
         source.map(|s| s.clone() as Arc<dyn WorldTextureSource>),
     );
+    crate::ui::set_pack(source);
 }
 
 /// The pack to boot with: `$REDUX_TEXTURE_PACK`, else the settings file's `texture_pack` (never
@@ -574,6 +584,20 @@ mod tests {
         assert!(source.texture("world\\tree\\missing.blp").is_none());
         let served = source.served();
         assert_eq!(served.len(), 2);
+        // A UI sprite key names its `interface/` file; anything else is not UI.
+        write_dds(
+            &pack.join("textures/interface/buttons/ui-quickslot.dds"),
+            256,
+            256,
+        );
+        let ui_pack = PackSource::open(info, 64 << 20).unwrap();
+        let (shape, _) = ui_pack
+            .ui_texture("interface\\buttons\\ui-quickslot")
+            .unwrap();
+        assert_eq!((shape.width, shape.height), (256, 256));
+        assert!(ui_pack.ui_texture("world\\tree\\leaves").is_none());
+        assert!(ui_pack.ui_texture("interface\\buttons\\missing").is_none());
+        std::fs::remove_file(pack.join("textures/interface/buttons/ui-quickslot.dds")).unwrap();
         assert_eq!(served["world\\tree\\leaves.blp"].height, 1024);
 
         // The index spares the scan and gives the same answers.
