@@ -22,3 +22,13 @@ bar ui-hud-unitframe-*-bar-energy
 bar ui-hud-unitframe-*-bar-energy-c60
 bar ui-hud-unitframe-*-bar-focus
 bar ui-hud-unitframe-*-bar-focus-c60
+bar ui-hud-unitframe-*-bar-health-2x
+bar ui-hud-unitframe-*-bar-health-c60-2x
+bar ui-hud-unitframe-*-bar-mana-2x
+bar ui-hud-unitframe-*-bar-mana-c60-2x
+bar ui-hud-unitframe-*-bar-rage-2x
+bar ui-hud-unitframe-*-bar-rage-c60-2x
+bar ui-hud-unitframe-*-bar-energy-2x
+bar ui-hud-unitframe-*-bar-energy-c60-2x
+bar ui-hud-unitframe-*-bar-focus-2x
+bar ui-hud-unitframe-*-bar-focus-c60-2x
