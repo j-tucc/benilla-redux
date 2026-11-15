@@ -23,7 +23,7 @@ python redux/headless/shoot.py --shots world+12 --lua "ToggleCharacter('PaperDol
 ```
 
 It makes a scratch `BENILLA_HOME`, uses `WOW_DATA=D:\WoW Vanilla\Data`, `WOW_HOST=127.0.0.1` and
-the CLAUDE account from `<workspace>\vmangos\claude-test-account.env` with
+the CLAUDE account from `$REDUX_ACCOUNT_ENV` (default `vmangos/claude-test-account.env` beside the checkout) with
 `WOW_CHAR=Claude` (it refuses the PLAYER account), runs the client silent and unattended, waits for
 it to exit and prints each screenshot as `PNG: <path>`. Agents open those with the Read tool. The
 log is `<home>/run.log`.

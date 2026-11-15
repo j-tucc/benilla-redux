@@ -22,7 +22,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_DATA = r"D:\WoW Vanilla\Data"
-DEFAULT_ACCOUNT_ENV = r"<workspace>\vmangos\claude-test-account.env"
+# The test account file: `$REDUX_ACCOUNT_ENV`, else `vmangos/claude-test-account.env` in the
+# folder that holds the main checkout.
+DEFAULT_ACCOUNT_ENV = os.environ.get(
+    "REDUX_ACCOUNT_ENV",
+    str(Path(__file__).resolve().parents[3] / "vmangos" / "claude-test-account.env"),
+)
 EXE_NAME = "benilla-headless.exe" if os.name == "nt" else "benilla-headless"
 # Accounts a scripted run must never use: logging in kicks whoever is playing on them.
 FORBIDDEN_ACCOUNTS = {"PLAYER"}
