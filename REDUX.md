@@ -115,6 +115,10 @@ Gitignored local files for redux live under `redux/overrides/` (`redux/.gitignor
 - **Cursor Size** (`redux/cursor`): the cursor drawn at a chosen size (Default, 32x32 … 128x128)
   or the display's DPI, set in `redux-cursor.toml`, `REDUX_CURSOR_SIZE`, or by an options addon
   through the `reduxCursorSize` CVar. See `redux/cursor/README.md`.
+- **In-game options** (`redux/options`): a **benilla-redux** group in benilla's Options window
+  (Enhanced Graphics, Textures, General) for every setting above, writing the same TOML keys, so
+  nothing needs a hand-edited file. Added from outside through the window's Lua tables and row
+  templates; no upstream file changes. See `redux/options/README.md`.
 
 ## Patch ledger
 
