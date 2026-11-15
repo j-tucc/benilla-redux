@@ -14,6 +14,7 @@ benilla-ui = { path = "../../crates/benilla-ui" }
 bevy.workspace = true
 redux-gfx = { path = "../gfx" }
 redux-packs = { path = "../packs" }
+redux-loot = { path = "../loot" }
 toml = "0.8"
 # Writes keep the files' comments and the keys the pages do not own.
 toml_edit = "0.22"

@@ -7,7 +7,7 @@ under benilla's own categories, with three pages.
 |---|---|---|---|
 | Enhanced Graphics | Preset (Classic, Enhanced, Custom), Anti-aliasing (MSAA, TAA, DLSS), DLSS Mode, Frame Generation; Effects: Foliage Wind, Modern Fog, Enhanced Sky, Colour Grading, Bloom, Sun Shadows, Moonlight, Light Shafts (Off, Medium, High), Ambient Occlusion, Ground Mist, Wet Surfaces, Sunlit Air, Sun Rays, Firelight; Models: Smooth Characters | `redux-gfx.toml` | live |
 | Textures | Texture Pack (Vanilla or any pack under `classic-overrides/texture-packs`); HD Icons, Pack Interface Art | `redux-textures.toml` | pack live; icons and interface art on restart (the group title says so) |
-| General | Cursor Size (Default, 32x32 … 128x128), with WoW Forever's stepper arrows either side of the dropdown | `redux-cursor.toml`, through redux-cursor's `reduxCursorSize` CVar | live |
+| General | Display: Cursor Size (Default, 32x32 … 128x128), with WoW Forever's stepper arrows either side of the dropdown; Controls: Loot Window At Cursor | `redux-cursor.toml`, through redux-cursor's `reduxCursorSize` CVar; `redux-loot.toml` | live; loot at the next loot |
 
 The pages write the same keys the redux crates read, so their live reload and their defaults are
 unchanged, and an edit to a file made outside the game shows on the page within half a second.
@@ -19,7 +19,8 @@ unchanged, and an edit to a file made outside the game shows on the page within 
   and a value the preset already gives removes its key, so the file stays as small as a hand
   written one.
 - **Defaults** on the Enhanced Graphics and Textures pages removes the page's keys from the file:
-  the code defaults (Classic, vanilla, stock icons) come back. On General it sets Default.
+  the code defaults (Classic, vanilla, stock icons) come back. On General it sets Default and
+  turns Loot Window At Cursor off.
 - DLSS Mode and Frame Generation are greyed unless Anti-aliasing is DLSS; Pack Interface Art is
   greyed under Vanilla.
 - `REDUX_GFX`, `REDUX_TEXTURE_PACK`, `REDUX_CURSOR_SIZE` and the other session variables still
